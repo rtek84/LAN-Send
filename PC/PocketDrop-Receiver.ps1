@@ -282,10 +282,11 @@ $xaml = @"
     </Border>
 
     <Grid Grid.Row="2" Margin="0,12,0,12">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Button Name="CopyButton" Content="Copy setup" Width="112" Height="38"/>
       <Button Name="FolderButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Open inbox" Width="112" Height="38" Margin="8,0,0,0"/>
-      <CheckBox Name="StartupBox" Grid.Column="2" Content="Start with Windows" VerticalAlignment="Center" HorizontalAlignment="Right"
+      <Button Name="SettingsButton" Grid.Column="2" Style="{StaticResource SoftButton}" Content="Settings" Width="96" Height="38" Margin="8,0,0,0"/>
+      <CheckBox Name="StartupBox" Grid.Column="3" Content="Start with Windows" VerticalAlignment="Center" HorizontalAlignment="Right"
                 Foreground="#536078" Margin="16,0,2,0"/>
     </Grid>
 
@@ -379,6 +380,61 @@ function Show-Arrival([string]$title, [string]$body) {
     $notify.BalloonTipTitle = $title
     $notify.BalloonTipText = $body
     $notify.ShowBalloonTip(3500)
+}
+
+function Save-InboxSetting([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    $script:Inbox = $Path
+    $Config.Inbox = $Path
+    $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+    $window.FindName('StatusText').Text = "Inbox changed to $Path"
+}
+
+function Show-SettingsWindow {
+    $settingsXaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="LAN Send settings" Width="570" Height="265" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <TextBlock Text="PC inbox folder" FontSize="21" FontWeight="SemiBold" Foreground="#182033"/>
+    <TextBlock Grid.Row="1" Margin="0,7,0,14" Text="Files received from your phone are saved here." Foreground="#758096" FontSize="13"/>
+    <TextBox Name="InboxPathBox" Grid.Row="2" Height="42" IsReadOnly="True" VerticalContentAlignment="Center"
+             Padding="10,0" BorderBrush="#DCE2EE" Background="White" Foreground="#364158"/>
+    <StackPanel Grid.Row="3" Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Name="RestoreButton" Content="Restore default" Width="120" Height="38" Margin="0,0,8,0"/>
+      <Button Name="OpenButton" Content="Open folder" Width="105" Height="38" Margin="0,0,8,0"/>
+      <Button Name="ChooseButton" Content="Choose folder" Width="115" Height="38" Background="#4664F5" Foreground="White"/>
+    </StackPanel>
+  </Grid>
+</Window>
+"@
+    $settingsReader = New-Object System.Xml.XmlNodeReader ([xml]$settingsXaml)
+    $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
+    $settingsWindow.Owner = $window
+    $pathBox = $settingsWindow.FindName('InboxPathBox')
+    $pathBox.Text = $script:Inbox
+
+    $settingsWindow.FindName('ChooseButton').add_Click({
+        $picker = New-Object System.Windows.Forms.FolderBrowserDialog
+        $picker.Description = 'Choose where LAN Send should save files received from your phone'
+        $picker.SelectedPath = $script:Inbox
+        $picker.ShowNewFolderButton = $true
+        $picker.AutoUpgradeEnabled = $true
+        if ($picker.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            Save-InboxSetting $picker.SelectedPath
+            $pathBox.Text = $script:Inbox
+        }
+        $picker.Dispose()
+    })
+    $settingsWindow.FindName('OpenButton').add_Click({ Start-Process explorer.exe $script:Inbox })
+    $settingsWindow.FindName('RestoreButton').add_Click({
+        $defaultInbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LAN Send Inbox'
+        Save-InboxSetting $defaultInbox
+        $pathBox.Text = $script:Inbox
+    })
+    [void]$settingsWindow.ShowDialog()
 }
 
 function Send-Response($context, [int]$code, [string]$text) {
@@ -511,6 +567,7 @@ $window.FindName('CopyButton').add_Click({
     $window.FindName('StatusText').Text = 'Setup copied'
 })
 $window.FindName('FolderButton').add_Click({ Start-Process explorer.exe $Inbox })
+$window.FindName('SettingsButton').add_Click({ Show-SettingsWindow })
 $window.FindName('SendPhoneMessageButton').add_Click({
     $text = $window.FindName('PhoneMessageBox').Text
     if ([string]::IsNullOrWhiteSpace($text)) { return }
