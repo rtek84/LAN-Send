@@ -304,8 +304,9 @@ class MainActivity : AppCompatActivity() {
         setBusy(true, "Saving $name…")
         executor.execute {
             try {
+                val savedName = uniqueDownloadName(name)
                 val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.DISPLAY_NAME, savedName)
                     put(MediaStore.Downloads.MIME_TYPE, mime)
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/LAN Send")
                     put(MediaStore.Downloads.IS_PENDING, 1)
@@ -322,7 +323,7 @@ class MainActivity : AppCompatActivity() {
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 contentResolver.update(uri, values, null, null)
                 file.delete()
-                runOnUiThread { setBusy(false, "Saved to Downloads/LAN Send ✓") }
+                runOnUiThread { setBusy(false, "Saved $savedName to Downloads/LAN Send ✓") }
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
             }
@@ -343,7 +344,8 @@ class MainActivity : AppCompatActivity() {
                 val parentUri = DocumentsContract.buildDocumentUriUsingTree(
                     treeUri, DocumentsContract.getTreeDocumentId(treeUri)
                 )
-                val destination = DocumentsContract.createDocument(contentResolver, parentUri, mime, name)
+                val savedName = uniqueTreeName(parentUri, name)
+                val destination = DocumentsContract.createDocument(contentResolver, parentUri, mime, savedName)
                     ?: error("Cannot create file in selected folder")
                 file.inputStream().use { input ->
                     contentResolver.openOutputStream(destination, "w").use { output ->
@@ -352,11 +354,67 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 file.delete()
-                runOnUiThread { setBusy(false, "Saved to ${defaultFolderLabel()} ✓") }
+                runOnUiThread { setBusy(false, "Saved $savedName to ${defaultFolderLabel()} ✓") }
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
             }
         }
+    }
+
+    private fun splitFileName(name: String): Pair<String, String> {
+        val dot = name.lastIndexOf('.')
+        return if (dot > 0) name.substring(0, dot) to name.substring(dot) else name to ""
+    }
+
+    private fun numberedName(name: String, number: Int): String {
+        val (base, extension) = splitFileName(name)
+        return "$base ($number)$extension"
+    }
+
+    private fun uniqueDownloadName(name: String): String {
+        val relativePath = Environment.DIRECTORY_DOWNLOADS + "/LAN Send/"
+        fun exists(candidate: String): Boolean {
+            val projection = arrayOf(MediaStore.Downloads._ID)
+            val selection = "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?"
+            return contentResolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                arrayOf(candidate, relativePath),
+                null
+            )?.use { it.moveToFirst() } == true
+        }
+
+        var candidate = name
+        var copyNumber = 1
+        while (exists(candidate)) {
+            candidate = numberedName(name, copyNumber++)
+        }
+        return candidate
+    }
+
+    private fun uniqueTreeName(parentUri: Uri, name: String): String {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            parentUri, DocumentsContract.getDocumentId(parentUri)
+        )
+        val existingNames = mutableSetOf<String>()
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val column = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (column >= 0 && cursor.moveToNext()) existingNames.add(cursor.getString(column))
+        }
+
+        var candidate = name
+        var copyNumber = 1
+        while (existingNames.contains(candidate)) {
+            candidate = numberedName(name, copyNumber++)
+        }
+        return candidate
     }
 
     private fun defaultFolderLabel(): String {
