@@ -126,10 +126,12 @@ class PocketDropReceiverService : Service() {
         val directory = File(getExternalFilesDir(null) ?: filesDir, "incoming").apply { mkdirs() }
         val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "LANSend_file" }
         var file = File(directory, safeName)
-        if (file.exists()) {
-            val base = safeName.substringBeforeLast('.', safeName)
-            val extension = safeName.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
-            file = File(directory, "${base}_${System.currentTimeMillis()}$extension")
+        val base = safeName.substringBeforeLast('.', safeName)
+        val extension = safeName.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
+        var copyNumber = 1
+        while (file.exists()) {
+            file = File(directory, "$base ($copyNumber)$extension")
+            copyNumber++
         }
         file.outputStream().buffered().use { output ->
             var remaining = length
