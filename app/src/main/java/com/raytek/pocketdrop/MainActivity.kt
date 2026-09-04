@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var statusText: TextView
     private lateinit var receivedFromPc: TextView
+    private lateinit var transferActivity: TextView
     private var receiverRegistered = false
     private val arrivalReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -46,11 +47,13 @@ class MainActivity : AppCompatActivity() {
                 "message" -> {
                     messageText.setText(intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty())
                     receivedFromPc.text = "Latest arrival: message from PC"
+                    refreshTransferActivity()
                     showStatus("Message received from PC")
                 }
                 "file" -> {
                     val name = intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty()
                     receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
+                    refreshTransferActivity()
                     showStatus("File received from PC")
                 }
             }
@@ -82,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         statusText = findViewById(R.id.statusText)
         receivedFromPc = findViewById(R.id.receivedFromPc)
+        transferActivity = findViewById(R.id.transferActivity)
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -126,6 +130,7 @@ class MainActivity : AppCompatActivity() {
             receiverRegistered = true
         }
         showLatestArrival()
+        refreshTransferActivity()
     }
 
     override fun onStop() {
@@ -148,6 +153,10 @@ class MainActivity : AppCompatActivity() {
             val name = arrivals.getString("latest_file", "").orEmpty()
             receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
         }
+    }
+
+    private fun refreshTransferActivity() {
+        transferActivity.text = TransferHistory.displayText(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -236,6 +245,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 postBytes("/api/text", "text/plain; charset=utf-8", text.toByteArray(StandardCharsets.UTF_8))
                 runOnUiThread {
+                    TransferHistory.add(this, "Sent message: ${text.replace("\n", " ").take(45)}")
+                    refreshTransferActivity()
                     messageText.text.clear()
                     setBusy(false, "Message delivered ✓")
                 }
@@ -260,6 +271,8 @@ class MainActivity : AppCompatActivity() {
                     sendUri(uri)
                 }
                 runOnUiThread {
+                    items.forEach { TransferHistory.add(this, "Sent file: ${displayName(it)}") }
+                    refreshTransferActivity()
                     selectedUris.clear()
                     updateSelectedFiles()
                     progress.progress = 100
