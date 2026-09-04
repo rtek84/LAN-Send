@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Send straight to your desktop"
+            android:text="Private transfers between your phone and PC"
             android:textColor="#6B7280"
             android:textSize="15sp" />
 
@@ -32,7 +32,7 @@
             android:layout_width="match_parent"
             android:layout_height="56dp"
             android:layout_marginTop="24dp"
-            android:text="Scan desktop QR code"
+            android:text="Connect to PC"
             android:textSize="16sp" />
 
         <TextView
@@ -48,7 +48,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:hint="Desktop address">
+            android:hint="PC address">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/serverAddress"
                 android:layout_width="match_parent"
@@ -82,6 +82,16 @@
             android:layout_height="1dp"
             android:layout_marginTop="26dp"
             android:background="#E4E7EE" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:background="#EAF7EE"
+            android:padding="14dp"
+            android:text="Phone receiver active\nPC files are saved in Downloads/PocketDrop"
+            android:textColor="#236B3C"
+            android:textSize="14sp" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
