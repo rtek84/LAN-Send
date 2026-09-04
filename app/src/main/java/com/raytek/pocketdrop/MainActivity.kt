@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.MediaStore
@@ -51,6 +53,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var receivedFromPc: TextView
     private lateinit var transferActivity: TextView
+    private lateinit var connectionStatus: TextView
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            checkPcStatus()
+            heartbeatHandler.postDelayed(this, 5_000)
+        }
+    }
     private var pendingSavePath: String? = null
     private var pendingSaveName: String? = null
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -142,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         receivedFromPc = findViewById(R.id.receivedFromPc)
         transferActivity = findViewById(R.id.transferActivity)
+        connectionStatus = findViewById(R.id.connectionStatus)
         findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
@@ -189,9 +200,12 @@ class MainActivity : AppCompatActivity() {
         }
         showLatestArrival()
         refreshTransferActivity()
+        heartbeatHandler.removeCallbacks(heartbeat)
+        heartbeatHandler.post(heartbeat)
     }
 
     override fun onStop() {
+        heartbeatHandler.removeCallbacks(heartbeat)
         if (receiverRegistered) {
             unregisterReceiver(arrivalReceiver)
             receiverRegistered = false
@@ -447,6 +461,32 @@ class MainActivity : AppCompatActivity() {
             value = "http://$value"
         }
         return value
+    }
+
+    private fun checkPcStatus() {
+        val address = normalizedServer()
+        if (address.isBlank()) {
+            connectionStatus.text = "● PC not configured"
+            connectionStatus.setTextColor(getColor(R.color.pocket_muted))
+            return
+        }
+        executor.execute {
+            val online = try {
+                val connection = URL("$address/ping").openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 2_000
+                connection.readTimeout = 2_000
+                val result = connection.responseCode in 200..299
+                connection.disconnect()
+                result
+            } catch (_: Exception) { false }
+            runOnUiThread {
+                if (!isFinishing) {
+                    connectionStatus.text = if (online) "● PC online" else "● PC offline — open LAN Send on your PC"
+                    connectionStatus.setTextColor(getColor(if (online) R.color.pocket_success else android.R.color.holo_orange_dark))
+                }
+            }
+        }
     }
 
     private fun connectionIsReady(): Boolean {
