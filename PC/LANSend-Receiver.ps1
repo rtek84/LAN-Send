@@ -405,6 +405,7 @@ function Save-InboxSetting([string]$Path) {
 function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LAN Send settings" Width="570" Height="290" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
