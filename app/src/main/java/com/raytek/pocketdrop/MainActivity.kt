@@ -142,7 +142,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         receivedFromPc = findViewById(R.id.receivedFromPc)
         transferActivity = findViewById(R.id.transferActivity)
-        findViewById<Button>(R.id.settingsButton).setOnClickListener { showSettings() }
+        findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
