@@ -66,10 +66,11 @@
                 <com.google.android.material.textfield.TextInputLayout
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp" android:hint="Private key">
+                    android:layout_marginTop="8dp" android:hint="Private key"
+                    app:endIconMode="password_toggle">
                     <com.google.android.material.textfield.TextInputEditText android:id="@+id/privateKey"
                         android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:inputType="textVisiblePassword" android:singleLine="true" />
+                        android:inputType="textPassword" android:singleLine="true" />
                 </com.google.android.material.textfield.TextInputLayout>
                 <Button android:id="@+id/saveConnection" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="10dp"
