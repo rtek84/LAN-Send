@@ -45,6 +45,18 @@ class PocketDropReceiverService : Service() {
         listenerWorker.execute { listen() }
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_NOT_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        running = false
+        try { server?.close() } catch (_: Exception) { }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun listen() {
         try {
             server = ServerSocket(PORT)
