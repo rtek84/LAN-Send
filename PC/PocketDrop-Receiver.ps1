@@ -443,8 +443,23 @@ function Send-FileToPhone([string]$FilePath) {
     if (-not (Test-Path $FilePath -PathType Leaf)) { return }
     try {
         $window.FindName('StatusText').Text = "Sending $([IO.Path]::GetFileName($FilePath))..."
-        $bytes = [IO.File]::ReadAllBytes($FilePath)
-        Send-ToPhone '/api/file' $bytes 'application/octet-stream' ([IO.Path]::GetFileName($FilePath))
+        $file = Get-Item -LiteralPath $FilePath
+        if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) { throw 'Connect the phone by scanning the PC QR code first.' }
+        $request = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)/api/file")
+        $request.Method = 'POST'
+        $request.ContentType = 'application/octet-stream'
+        $request.ContentLength = $file.Length
+        $request.Timeout = 120000
+        $request.ReadWriteTimeout = 120000
+        $request.AllowWriteStreamBuffering = $false
+        $request.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+        $request.Headers.Add('X-File-Name', [Uri]::EscapeDataString($file.Name))
+        $input = [IO.File]::OpenRead($file.FullName)
+        try {
+            $stream = $request.GetRequestStream()
+            try { $input.CopyTo($stream) } finally { $stream.Dispose() }
+        } finally { $input.Dispose() }
+        $response = $request.GetResponse(); $response.Dispose()
         Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))"
         $window.FindName('StatusText').Text = 'File delivered to phone'
     } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'PocketDrop') | Out-Null }
@@ -491,10 +506,24 @@ $window.FindName('SendPhoneFileButton').add_Click({
     $dialog.Title = 'Choose a file to send to your phone'
     if ($dialog.ShowDialog()) { Send-FileToPhone $dialog.FileName }
 })
-$window.add_Drop({ param($sender, $e)
+$window.add_PreviewDragOver({ param($sender, $e)
     if ($e.Data.GetDataPresent([Windows.DataFormats]::FileDrop)) {
-        foreach ($file in $e.Data.GetData([Windows.DataFormats]::FileDrop)) { Send-FileToPhone $file }
+        $e.Effects = [Windows.DragDropEffects]::Copy
+        $window.FindName('StatusText').Text = 'Release to send file to phone'
+    } else {
+        $e.Effects = [Windows.DragDropEffects]::None
     }
+    $e.Handled = $true
+})
+$window.add_PreviewDragLeave({
+    $window.FindName('StatusText').Text = 'Listening - ready to receive'
+})
+$window.add_PreviewDrop({ param($sender, $e)
+    if ($e.Data.GetDataPresent([Windows.DataFormats]::FileDrop)) {
+        $files = @($e.Data.GetData([Windows.DataFormats]::FileDrop))
+        foreach ($file in $files) { Send-FileToPhone ([string]$file) }
+    }
+    $e.Handled = $true
 })
 $startupBox.add_Click({
     if ($startupBox.IsChecked) {
