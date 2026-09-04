@@ -522,15 +522,27 @@ class MainActivity : AppCompatActivity() {
         if (selectedUris.isEmpty()) return showStatus("Choose a file first", true)
         if (!connectionIsReady()) return
         val items = selectedUris.toList()
+        val sizes = items.associateWith { contentLength(it) }
+        val totalBytes = sizes.values.filter { it > 0L }.sum()
         setBusy(true, "Sending ${items.size} item(s)…")
         executor.execute {
             try {
+                var completedBytes = 0L
                 items.forEachIndexed { index, uri ->
-                    runOnUiThread {
-                        progress.progress = ((index.toFloat() / items.size) * 100).toInt()
-                        statusText.text = "Sending ${index + 1} of ${items.size}…"
+                    val name = displayName(uri)
+                    val itemSize = sizes[uri] ?: -1L
+                    sendUri(uri) { sentForItem ->
+                        val overall = if (totalBytes > 0L && itemSize > 0L) {
+                            (((completedBytes + sentForItem) * 100L) / totalBytes).toInt().coerceIn(0, 99)
+                        } else {
+                            (((index + (if (sentForItem > 0L) 0.5 else 0.0)) / items.size) * 100).toInt()
+                        }
+                        runOnUiThread {
+                            progress.progress = overall
+                            statusText.text = "Sending ${index + 1}/${items.size}: $name · ${readableBytes(sentForItem)}${if (itemSize > 0L) " / ${readableBytes(itemSize)}" else ""}"
+                        }
                     }
-                    sendUri(uri)
+                    if (itemSize > 0L) completedBytes += itemSize
                 }
                 runOnUiThread {
                     items.forEach { TransferHistory.add(this, "Sent file: ${displayName(it)}") }
@@ -546,19 +558,55 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun sendUri(uri: Uri) {
+    private fun sendUri(uri: Uri, onProgress: (Long) -> Unit = {}) {
         val name = displayName(uri)
         val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+        val size = contentLength(uri)
         val connection = openConnection("/api/file")
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", mime)
         connection.setRequestProperty("X-File-Name", URLEncoder.encode(name, "UTF-8"))
+        if (size >= 0L) connection.setFixedLengthStreamingMode(size) else connection.setChunkedStreamingMode(64 * 1024)
         contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Cannot open $name" }
-            connection.outputStream.use { output -> BufferedInputStream(input).copyTo(output) }
+            connection.outputStream.use { output ->
+                val source = BufferedInputStream(input)
+                val buffer = ByteArray(64 * 1024)
+                var sent = 0L
+                var lastUpdate = 0L
+                while (true) {
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                    sent += count
+                    val now = System.currentTimeMillis()
+                    if (now - lastUpdate >= 150L) {
+                        onProgress(sent)
+                        lastUpdate = now
+                    }
+                }
+                onProgress(sent)
+            }
         }
         verifyResponse(connection)
+    }
+
+    private fun contentLength(uri: Uri): Long {
+        return try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
+                if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else -1L
+            } ?: -1L
+        } catch (_: Exception) { -1L }
+    }
+
+    private fun readableBytes(bytes: Long): String {
+        if (bytes < 1024L) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var unit = -1
+        do { value /= 1024.0; unit++ } while (value >= 1024.0 && unit < units.lastIndex)
+        return String.format("%.1f %s", value, units[unit])
     }
 
     private fun postBytes(path: String, contentType: String, bytes: ByteArray) {
