@@ -292,7 +292,7 @@ $xaml = @"
 
     <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,12">
       <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <TextBlock Text="Send to phone" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
           <Border Grid.Column="1" Background="#FFF7E6" CornerRadius="9" Padding="10,5">
@@ -307,6 +307,8 @@ $xaml = @"
           <TextBlock Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8792A8"
                      FontSize="12" Text="You can also drop files anywhere here"/>
         </Grid>
+        <ProgressBar Name="PhoneSendProgress" Grid.Row="3" Height="7" Margin="0,12,0,0"
+                     Minimum="0" Maximum="100" Visibility="Collapsed"/>
       </Grid>
     </Border>
 
@@ -551,11 +553,22 @@ function Show-FriendlySendError($ErrorRecord) {
     [System.Windows.MessageBox]::Show($message, 'LAN Send', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information) | Out-Null
 }
 
-function Send-FileToPhone([string]$FilePath) {
+function Format-TransferSize([long]$Bytes) {
+    if ($Bytes -lt 1KB) { return "$Bytes B" }
+    if ($Bytes -lt 1MB) { return ('{0:N1} KB' -f ($Bytes / 1KB)) }
+    if ($Bytes -lt 1GB) { return ('{0:N1} MB' -f ($Bytes / 1MB)) }
+    return ('{0:N2} GB' -f ($Bytes / 1GB))
+}
+
+function Send-FileToPhone([string]$FilePath, [long]$CompletedBefore = 0, [long]$BatchTotal = 0) {
     if (-not (Test-Path $FilePath -PathType Leaf)) { return }
     try {
-        $window.FindName('StatusText').Text = "Sending $([IO.Path]::GetFileName($FilePath))..."
         $file = Get-Item -LiteralPath $FilePath
+        if ($BatchTotal -le 0) { $BatchTotal = $file.Length }
+        $progressBar = $window.FindName('PhoneSendProgress')
+        $progressBar.Visibility = 'Visible'
+        $progressBar.Value = if ($BatchTotal -gt 0) { ($CompletedBefore * 100.0 / $BatchTotal) } else { 0 }
+        $window.FindName('StatusText').Text = "Sending $($file.Name)..."
         if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) { throw 'Connect the phone by scanning the PC QR code first.' }
         $request = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)/api/file")
         $request.Method = 'POST'
@@ -569,12 +582,40 @@ function Send-FileToPhone([string]$FilePath) {
         $input = [IO.File]::OpenRead($file.FullName)
         try {
             $stream = $request.GetRequestStream()
-            try { $input.CopyTo($stream) } finally { $stream.Dispose() }
+            try {
+                $buffer = New-Object byte[] (64KB)
+                [long]$sent = 0
+                $lastUpdate = [Environment]::TickCount
+                while (($count = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $stream.Write($buffer, 0, $count)
+                    $sent += $count
+                    if ([Environment]::TickCount - $lastUpdate -ge 150) {
+                        $overall = if ($BatchTotal -gt 0) { (($CompletedBefore + $sent) * 100.0 / $BatchTotal) } else { 0 }
+                        $progressBar.Value = [Math]::Min(99, $overall)
+                        $window.FindName('StatusText').Text = "Sending $($file.Name) - $(Format-TransferSize $sent) / $(Format-TransferSize $file.Length)"
+                        $window.Dispatcher.Invoke([action]{}, [Windows.Threading.DispatcherPriority]::Background)
+                        $lastUpdate = [Environment]::TickCount
+                    }
+                }
+            } finally { $stream.Dispose() }
         } finally { $input.Dispose() }
         $response = $request.GetResponse(); $response.Dispose()
         Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))"
-        $window.FindName('StatusText').Text = 'File delivered to phone'
-    } catch { Show-FriendlySendError $_ }
+        return $true
+    } catch { Show-FriendlySendError $_; return $false }
+}
+
+function Send-FilesToPhone([string[]]$FilePaths) {
+    $files = @($FilePaths | Where-Object { Test-Path $_ -PathType Leaf } | ForEach-Object { Get-Item -LiteralPath $_ })
+    if ($files.Count -eq 0) { return }
+    [long]$total = ($files | Measure-Object Length -Sum).Sum
+    [long]$completed = 0
+    foreach ($file in $files) {
+        if (-not (Send-FileToPhone $file.FullName $completed $total)) { return }
+        $completed += $file.Length
+    }
+    $window.FindName('PhoneSendProgress').Value = 100
+    $window.FindName('StatusText').Text = if ($files.Count -eq 1) { 'File delivered to phone' } else { "$($files.Count) files delivered to phone" }
 }
 
 $listener = New-Object Net.HttpListener
@@ -623,7 +664,8 @@ $window.FindName('SendPhoneMessageButton').add_Click({
 $window.FindName('SendPhoneFileButton').add_Click({
     $dialog = New-Object Microsoft.Win32.OpenFileDialog
     $dialog.Title = 'Choose a file to send to your phone'
-    if ($dialog.ShowDialog()) { Send-FileToPhone $dialog.FileName }
+    $dialog.Multiselect = $true
+    if ($dialog.ShowDialog()) { Send-FilesToPhone $dialog.FileNames }
 })
 $window.add_PreviewDragOver({ param($sender, $e)
     if ($e.Data.GetDataPresent([Windows.DataFormats]::FileDrop)) {
@@ -640,7 +682,7 @@ $window.add_PreviewDragLeave({
 $window.add_PreviewDrop({ param($sender, $e)
     if ($e.Data.GetDataPresent([Windows.DataFormats]::FileDrop)) {
         $files = @($e.Data.GetData([Windows.DataFormats]::FileDrop))
-        foreach ($file in $files) { Send-FileToPhone ([string]$file) }
+        Send-FilesToPhone ([string[]]$files)
     }
     $e.Handled = $true
 })
