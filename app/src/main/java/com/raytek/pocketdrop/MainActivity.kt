@@ -14,6 +14,7 @@ import android.os.Environment
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.MediaStore
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.View
 import android.view.Gravity
@@ -52,6 +53,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var transferActivity: TextView
     private var pendingSavePath: String? = null
     private var pendingSaveName: String? = null
+    private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
+                    .putString("receive_folder_uri", uri.toString()).apply()
+                showStatus("Default phone folder updated ✓")
+            } catch (e: Exception) {
+                showStatus("Could not use that folder: ${e.message}", true)
+            }
+        }
+    }
     private val saveAsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val destination = result.data?.data
         val source = pendingSavePath?.let(::File)
@@ -126,6 +142,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         receivedFromPc = findViewById(R.id.receivedFromPc)
         transferActivity = findViewById(R.id.transferActivity)
+        findViewById<Button>(R.id.settingsButton).setOnClickListener { showSettings() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -245,7 +262,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         addAction("Open", { openIncomingFile(file, mime) })
-        addAction("Save to Downloads/LAN Send", { saveToDownloads(file, name, mime) })
+        addAction("Save to ${defaultFolderLabel()}", { saveToDefaultFolder(file, name, mime) })
         addAction("Choose location…", { chooseSaveLocation(file, name, mime) })
 
         dialog = AlertDialog.Builder(this)
@@ -296,6 +313,68 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
             }
         }
+    }
+
+    private fun saveToDefaultFolder(file: File, name: String, mime: String) {
+        val savedTree = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+            .getString("receive_folder_uri", null)
+        if (savedTree.isNullOrBlank()) {
+            saveToDownloads(file, name, mime)
+            return
+        }
+        setBusy(true, "Saving $name…")
+        executor.execute {
+            try {
+                val treeUri = Uri.parse(savedTree)
+                val parentUri = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, DocumentsContract.getTreeDocumentId(treeUri)
+                )
+                val destination = DocumentsContract.createDocument(contentResolver, parentUri, mime, name)
+                    ?: error("Cannot create file in selected folder")
+                file.inputStream().use { input ->
+                    contentResolver.openOutputStream(destination, "w").use { output ->
+                        requireNotNull(output) { "Cannot write to selected folder" }
+                        input.copyTo(output)
+                    }
+                }
+                file.delete()
+                runOnUiThread { setBusy(false, "Saved to ${defaultFolderLabel()} ✓") }
+            } catch (e: Exception) {
+                runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
+            }
+        }
+    }
+
+    private fun defaultFolderLabel(): String {
+        val value = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+            .getString("receive_folder_uri", null) ?: return "Downloads/LAN Send"
+        return try {
+            val id = DocumentsContract.getTreeDocumentId(Uri.parse(value))
+            id.substringAfter(':').ifBlank { id.substringBefore(':') }.ifBlank { "selected folder" }
+        } catch (_: Exception) { "selected folder" }
+    }
+
+    private fun showSettings() {
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 12, 48, 8)
+            addView(TextView(this@MainActivity).apply {
+                text = "Files received from your PC will be saved here when you choose Save:\n\n${defaultFolderLabel()}"
+                textSize = 15f
+                setTextColor(getColor(R.color.pocket_text_soft))
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Phone storage")
+            .setView(body)
+            .setPositiveButton("Choose folder") { _, _ -> folderPicker.launch(null) }
+            .setNeutralButton("Restore default") { _, _ ->
+                getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
+                    .remove("receive_folder_uri").apply()
+                showStatus("Default restored: Downloads/LAN Send")
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun chooseSaveLocation(file: File, name: String, mime: String) {
