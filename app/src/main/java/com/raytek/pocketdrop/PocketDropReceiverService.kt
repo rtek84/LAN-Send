@@ -32,7 +32,7 @@ class PocketDropReceiverService : Service() {
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         startForeground(1001, NotificationCompat.Builder(this, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("PocketDrop is ready")
+            .setContentTitle("LAN Send is ready")
             .setContentText("Your PC can send files and messages to this phone")
             .setContentIntent(openApp)
             .setOngoing(true)
@@ -73,7 +73,7 @@ class PocketDropReceiverService : Service() {
                 if (headers["x-pocketdrop-token"] != expected) return respond(client, 401, "Private key rejected")
                 val length = headers["content-length"]?.toLongOrNull() ?: 0L
                 when (request[1]) {
-                    "/ping" -> respond(client, 200, "PocketDrop phone is ready")
+                    "/ping" -> respond(client, 200, "LAN Send phone is ready")
                     "/api/text" -> {
                         val text = readBody(input, length).toString(StandardCharsets.UTF_8)
                         getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
@@ -85,7 +85,7 @@ class PocketDropReceiverService : Service() {
                         respond(client, 200, "OK")
                     }
                     "/api/file" -> {
-                        val encoded = headers["x-file-name"] ?: "PocketDrop_file"
+                        val encoded = headers["x-file-name"] ?: "LANSend_file"
                         val name = URLDecoder.decode(encoded, "UTF-8").substringAfterLast('/').substringAfterLast('\\')
                         val mime = headers["content-type"] ?: "application/octet-stream"
                         val file = saveIncomingFile(name, input, length)
@@ -111,7 +111,7 @@ class PocketDropReceiverService : Service() {
 
     private fun saveIncomingFile(name: String, input: BufferedInputStream, length: Long): File {
         val directory = File(getExternalFilesDir(null) ?: filesDir, "incoming").apply { mkdirs() }
-        val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "PocketDrop_file" }
+        val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "LANSend_file" }
         var file = File(directory, safeName)
         if (file.exists()) {
             val base = safeName.substringBeforeLast('.', safeName)
@@ -165,8 +165,8 @@ class PocketDropReceiverService : Service() {
 
     private fun createChannels() {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_SERVICE, "PocketDrop receiver", NotificationManager.IMPORTANCE_LOW))
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_ARRIVALS, "PocketDrop arrivals", NotificationManager.IMPORTANCE_HIGH))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_SERVICE, "LAN Send receiver", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_ARRIVALS, "LAN Send arrivals", NotificationManager.IMPORTANCE_HIGH))
     }
 
     private fun notifyArrival(title: String, text: String) {
