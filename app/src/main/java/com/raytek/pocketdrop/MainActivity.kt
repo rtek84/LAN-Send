@@ -2,6 +2,9 @@ package com.raytek.pocketdrop
 
 import android.app.Activity
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -15,6 +18,7 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.io.BufferedInputStream
@@ -34,6 +38,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sendFilesButton: Button
     private lateinit var progress: ProgressBar
     private lateinit var statusText: TextView
+    private lateinit var receivedFromPc: TextView
+    private var receiverRegistered = false
+    private val arrivalReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.getStringExtra(PocketDropReceiverService.EXTRA_TYPE)) {
+                "message" -> {
+                    messageText.setText(intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty())
+                    receivedFromPc.text = "Latest arrival: message from PC"
+                    showStatus("Message received from PC")
+                }
+                "file" -> {
+                    val name = intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty()
+                    receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
+                    showStatus("File received from PC")
+                }
+            }
+        }
+    }
     private val qrScanner = registerForActivityResult(ScanContract()) { result ->
         val value = result.contents ?: return@registerForActivityResult
         val parts = value.split('|', limit = 3)
@@ -59,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         sendFilesButton = findViewById(R.id.sendFiles)
         progress = findViewById(R.id.progress)
         statusText = findViewById(R.id.statusText)
+        receivedFromPc = findViewById(R.id.receivedFromPc)
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -89,6 +112,42 @@ class MainActivity : AppCompatActivity() {
         }
         sendFilesButton.setOnClickListener { sendSelectedFiles() }
         handleShareIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!receiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                arrivalReceiver,
+                IntentFilter(PocketDropReceiverService.ACTION_RECEIVED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            receiverRegistered = true
+        }
+        showLatestArrival()
+    }
+
+    override fun onStop() {
+        if (receiverRegistered) {
+            unregisterReceiver(arrivalReceiver)
+            receiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    private fun showLatestArrival() {
+        val arrivals = getSharedPreferences("pocketdrop_messages", MODE_PRIVATE)
+        val messageTime = arrivals.getLong("latest_time", 0L)
+        val fileTime = arrivals.getLong("latest_file_time", 0L)
+        if (messageTime >= fileTime && messageTime > 0L) {
+            val message = arrivals.getString("latest", "").orEmpty()
+            if (messageText.text.isNullOrBlank()) messageText.setText(message)
+            receivedFromPc.text = "Latest arrival: message from PC"
+        } else if (fileTime > 0L) {
+            val name = arrivals.getString("latest_file", "").orEmpty()
+            receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
