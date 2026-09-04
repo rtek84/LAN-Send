@@ -6,8 +6,9 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 $Port = 8734
 $AppFolder = Join-Path $env:LOCALAPPDATA 'PocketDrop'
 $ConfigPath = Join-Path $AppFolder 'config.json'
-$Inbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PocketDrop Inbox'
-$StartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\PocketDrop Receiver.lnk'
+$Inbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LAN Send Inbox'
+$StartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\LAN Send Receiver.lnk'
+$LegacyStartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\PocketDrop Receiver.lnk'
 
 New-Item -ItemType Directory -Path $AppFolder,$Inbox -Force | Out-Null
 
@@ -201,7 +202,7 @@ $QrBitmap.Dispose()
 $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PocketDrop PC" Width="780" Height="850" MinWidth="700" MinHeight="720"
+        Title="LAN Send PC" Width="780" Height="850" MinWidth="700" MinHeight="720"
         WindowStartupLocation="CenterScreen" Background="#F5F7FC" FontFamily="Segoe UI"
         ResizeMode="CanResize" AllowDrop="True">
   <Window.Resources>
@@ -250,7 +251,7 @@ $xaml = @"
         <TextBlock Text="PD" Foreground="White" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
       </Border>
       <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-        <TextBlock Text="PocketDrop" FontSize="27" FontWeight="SemiBold" Foreground="#182033"/>
+        <TextBlock Text="LAN Send" FontSize="27" FontWeight="SemiBold" Foreground="#182033"/>
         <TextBlock Text="Private transfers over local Wi-Fi" Foreground="#758096" FontSize="13"/>
       </StackPanel>
     </Grid>
@@ -264,7 +265,7 @@ $xaml = @"
         <Grid Grid.Column="1" Margin="20,1,0,0">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <TextBlock Text="CONNECT YOUR PHONE" FontSize="11" FontWeight="Bold" Foreground="#4664F5"/>
-          <TextBlock Grid.Row="1" Margin="0,5,0,12" Text="Open PocketDrop on your phone and scan this QR code."
+          <TextBlock Grid.Row="1" Margin="0,5,0,12" Text="Open LAN Send on your phone and scan this QR code."
                      TextWrapping="Wrap" Foreground="#536078" FontSize="13"/>
           <Border Grid.Row="2" Background="#F7F8FC" CornerRadius="9" Padding="11,8" Margin="0,0,0,8">
             <StackPanel><TextBlock Text="PC ADDRESS" FontSize="9" FontWeight="Bold" Foreground="#8792A8"/>
@@ -334,16 +335,26 @@ $qrImage.Source = $qrSource
 $historyList = $window.FindName('HistoryList')
 $phoneStatus = $window.FindName('PhoneStatus')
 if ($Config.PhoneAddress) { $phoneStatus.Text = "Connected: $($Config.PhoneAddress)"; $phoneStatus.Foreground = '#2E7D32' }
+$legacyStartupWasEnabled = Test-Path $LegacyStartupShortcut
+if ($legacyStartupWasEnabled -and -not (Test-Path $StartupShortcut)) {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($StartupShortcut)
+    $shortcut.TargetPath = 'powershell.exe'
+    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Startup"
+    $shortcut.WorkingDirectory = Split-Path $PSCommandPath
+    $shortcut.Save()
+    Remove-Item $LegacyStartupShortcut -Force -ErrorAction SilentlyContinue
+}
 $startupBox = $window.FindName('StartupBox'); $startupBox.IsChecked = Test-Path $StartupShortcut
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = [System.Drawing.SystemIcons]::Information
-$notify.Text = 'PocketDrop Receiver'
+$notify.Text = 'LAN Send Receiver'
 $notify.Visible = $true
 $notify.add_DoubleClick({ $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
-[void]$menu.Items.Add('Open PocketDrop', $null, { $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
+[void]$menu.Items.Add('Open LAN Send', $null, { $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
 [void]$menu.Items.Add('Open Inbox', $null, { Start-Process explorer.exe $Inbox })
 [void]$menu.Items.Add('Exit', $null, { $script:AllowClose = $true; $window.Close() })
 $notify.ContextMenuStrip = $menu
@@ -373,7 +384,7 @@ function Send-Response($context, [int]$code, [string]$text) {
 function Receive-Request($context) {
     try {
         if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/ping') {
-            Send-Response $context 200 'PocketDrop is ready'; return
+            Send-Response $context 200 'LAN Send is ready'; return
         }
         if ($context.Request.Headers['X-PocketDrop-Token'] -ne $Token) {
             Send-Response $context 401 'Private key rejected'; return
@@ -401,12 +412,12 @@ function Receive-Request($context) {
                 Add-Content -Path (Join-Path $Inbox 'Messages.txt') -Value "[$stamp] $text`r`n" -Encoding UTF8
                 $window.Dispatcher.Invoke([action]{ [System.Windows.Clipboard]::SetText($text) })
                 Add-History "Message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
-                Show-Arrival 'PocketDrop message' 'Copied to clipboard'
+                Show-Arrival 'LAN Send message' 'Copied to clipboard'
                 Send-Response $context 200 'OK'
             }
             '/api/file' {
                 $encodedName = $context.Request.Headers['X-File-Name']
-                $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'PocketDrop_file' }
+                $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'LANSend_file' }
                 $name = [IO.Path]::GetFileName($name)
                 foreach ($char in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$char, '_') }
                 $target = Join-Path $Inbox $name
@@ -418,10 +429,10 @@ function Receive-Request($context) {
                 $context.Request.InputStream.CopyTo($output)
                 $output.Dispose()
                 Add-History "File: $([IO.Path]::GetFileName($target))"
-                Show-Arrival 'PocketDrop received' ([IO.Path]::GetFileName($target))
+                Show-Arrival 'LAN Send received' ([IO.Path]::GetFileName($target))
                 Send-Response $context 200 'OK'
             }
-            default { Send-Response $context 404 'Unknown PocketDrop endpoint' }
+            default { Send-Response $context 404 'Unknown LAN Send endpoint' }
         }
     } catch {
         try { Send-Response $context 500 $_.Exception.Message } catch {}
@@ -462,13 +473,13 @@ function Send-FileToPhone([string]$FilePath) {
         $response = $request.GetResponse(); $response.Dispose()
         Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))"
         $window.FindName('StatusText').Text = 'File delivered to phone'
-    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'PocketDrop') | Out-Null }
+    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'LAN Send') | Out-Null }
 }
 
 $listener = New-Object Net.HttpListener
 $listener.Prefixes.Add("http://+:$Port/")
 try { $listener.Start() } catch {
-    [System.Windows.MessageBox]::Show("PocketDrop could not start listening.`n`n$($_.Exception.Message)", 'PocketDrop') | Out-Null
+    [System.Windows.MessageBox]::Show("LAN Send could not start listening.`n`n$($_.Exception.Message)", 'LAN Send') | Out-Null
     $notify.Dispose(); exit
 }
 
@@ -499,7 +510,7 @@ $window.FindName('SendPhoneMessageButton').add_Click({
         Add-History "Sent message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
         $window.FindName('PhoneMessageBox').Clear()
         $window.FindName('StatusText').Text = 'Message delivered to phone'
-    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'PocketDrop') | Out-Null }
+    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'LAN Send') | Out-Null }
 })
 $window.FindName('SendPhoneFileButton').add_Click({
     $dialog = New-Object Microsoft.Win32.OpenFileDialog
