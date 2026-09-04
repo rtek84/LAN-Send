@@ -526,9 +526,11 @@ function Receive-Request($context) {
                 $name = [IO.Path]::GetFileName($name)
                 foreach ($char in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$char, '_') }
                 $target = Join-Path $Inbox $name
-                if (Test-Path $target) {
-                    $base = [IO.Path]::GetFileNameWithoutExtension($name); $ext = [IO.Path]::GetExtension($name)
-                    $target = Join-Path $Inbox "${base}_$(Get-Date -Format 'yyyyMMdd_HHmmss')${ext}"
+                $base = [IO.Path]::GetFileNameWithoutExtension($name); $ext = [IO.Path]::GetExtension($name)
+                $copyNumber = 1
+                while (Test-Path -LiteralPath $target) {
+                    $target = Join-Path $Inbox "${base} ($copyNumber)${ext}"
+                    $copyNumber++
                 }
                 $output = [IO.File]::Create($target)
                 $context.Request.InputStream.CopyTo($output)
