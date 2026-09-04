@@ -500,7 +500,7 @@ function Receive-Request($context) {
             default { Send-Response $context 404 'Unknown LAN Send endpoint' }
         }
     } catch {
-        try { Send-Response $context 500 $_.Exception.Message } catch {}
+        try { Send-Response $context 500 'LAN Send could not receive this item.' } catch {}
     }
 }
 
@@ -537,6 +537,20 @@ function Test-PhoneConnection {
     }
 }
 
+function Show-FriendlySendError($ErrorRecord) {
+    $message = if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) {
+        'Connect your phone by scanning the QR code first.'
+    } elseif ($ErrorRecord.Exception -is [Net.WebException] -and
+              $ErrorRecord.Exception.Response -and
+              [int]$ErrorRecord.Exception.Response.StatusCode -eq 401) {
+        'The phone rejected this connection. Open LAN Send on your phone and scan the QR code again.'
+    } else {
+        'Your phone appears to be offline. Open LAN Send on your phone and try again.'
+    }
+    $window.FindName('StatusText').Text = $message
+    [System.Windows.MessageBox]::Show($message, 'LAN Send', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information) | Out-Null
+}
+
 function Send-FileToPhone([string]$FilePath) {
     if (-not (Test-Path $FilePath -PathType Leaf)) { return }
     try {
@@ -560,13 +574,13 @@ function Send-FileToPhone([string]$FilePath) {
         $response = $request.GetResponse(); $response.Dispose()
         Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))"
         $window.FindName('StatusText').Text = 'File delivered to phone'
-    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'LAN Send') | Out-Null }
+    } catch { Show-FriendlySendError $_ }
 }
 
 $listener = New-Object Net.HttpListener
 $listener.Prefixes.Add("http://+:$Port/")
 try { $listener.Start() } catch {
-    [System.Windows.MessageBox]::Show("LAN Send could not start listening.`n`n$($_.Exception.Message)", 'LAN Send') | Out-Null
+    [System.Windows.MessageBox]::Show('LAN Send could not start the PC receiver. Another copy may already be running. Close it from the notification area, then try again.', 'LAN Send', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
     $notify.Dispose(); exit
 }
 
@@ -604,7 +618,7 @@ $window.FindName('SendPhoneMessageButton').add_Click({
         Add-History "Sent message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
         $window.FindName('PhoneMessageBox').Clear()
         $window.FindName('StatusText').Text = 'Message delivered to phone'
-    } catch { [System.Windows.MessageBox]::Show($_.Exception.Message, 'LAN Send') | Out-Null }
+    } catch { Show-FriendlySendError $_ }
 })
 $window.FindName('SendPhoneFileButton').add_Click({
     $dialog = New-Object Microsoft.Win32.OpenFileDialog
