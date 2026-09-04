@@ -625,7 +625,10 @@ class MainActivity : AppCompatActivity() {
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", mime)
         connection.setRequestProperty("X-File-Name", URLEncoder.encode(name, "UTF-8"))
-        if (size >= 0L) connection.setFixedLengthStreamingMode(size) else connection.setChunkedStreamingMode(64 * 1024)
+        // Some Android document providers report an estimated or stale size.
+        // Chunked streaming sends the bytes actually read instead of failing when
+        // that metadata does not match the real file length.
+        connection.setChunkedStreamingMode(64 * 1024)
         contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Cannot open $name" }
             connection.outputStream.use { output ->
