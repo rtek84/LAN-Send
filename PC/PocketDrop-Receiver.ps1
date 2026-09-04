@@ -515,6 +515,28 @@ function Send-ToPhone([string]$Path, [byte[]]$Bytes, [string]$ContentType, [stri
     $response = $request.GetResponse(); $response.Dispose()
 }
 
+function Test-PhoneConnection {
+    if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) {
+        $phoneStatus.Text = 'Phone not connected'
+        $phoneStatus.Foreground = '#A66500'
+        return
+    }
+    try {
+        $request = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)/ping")
+        $request.Method = 'GET'
+        $request.Timeout = 1800
+        $request.ReadWriteTimeout = 1800
+        $request.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+        $response = $request.GetResponse()
+        $response.Dispose()
+        $phoneStatus.Text = 'Phone online'
+        $phoneStatus.Foreground = '#2E7D32'
+    } catch {
+        $phoneStatus.Text = 'Phone offline - open LAN Send'
+        $phoneStatus.Foreground = '#A66500'
+    }
+}
+
 function Send-FileToPhone([string]$FilePath) {
     if (-not (Test-Path $FilePath -PathType Leaf)) { return }
     try {
@@ -561,6 +583,12 @@ $pollTimer.add_Tick({
     } catch {}
 })
 $pollTimer.Start()
+
+$heartbeatTimer = New-Object Windows.Threading.DispatcherTimer
+$heartbeatTimer.Interval = [TimeSpan]::FromSeconds(5)
+$heartbeatTimer.add_Tick({ Test-PhoneConnection })
+$heartbeatTimer.Start()
+Test-PhoneConnection
 
 $window.FindName('CopyButton').add_Click({
     [System.Windows.Clipboard]::SetText("PC address: $Address`r`nPrivate key: $Token")
@@ -617,6 +645,6 @@ $script:AllowClose = $false
 $window.add_Closing({ param($sender, $e)
     if (-not $script:AllowClose) { $e.Cancel = $true; $window.Hide() }
 })
-$window.add_Closed({ $pollTimer.Stop(); $listener.Stop(); $listener.Close(); $notify.Visible = $false; $notify.Dispose() })
+$window.add_Closed({ $heartbeatTimer.Stop(); $pollTimer.Stop(); $listener.Stop(); $listener.Close(); $notify.Visible = $false; $notify.Dispose() })
 if ($Startup) { $window.add_ContentRendered({ $window.Hide() }) }
 [void]$window.ShowDialog()
