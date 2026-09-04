@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
 
 class PocketDropReceiverService : Service() {
     private val listenerWorker = Executors.newSingleThreadExecutor()
-    private val transferWorkers = Executors.newFixedThreadPool(4)
+    private val transferWorkers = Executors.newFixedThreadPool(2)
     @Volatile private var running = true
     private var server: ServerSocket? = null
 
@@ -87,6 +87,7 @@ class PocketDropReceiverService : Service() {
                 when (request[1]) {
                     "/ping" -> respond(client, 200, "LAN Send phone is ready")
                     "/api/text" -> {
+                        if (length > 1024L * 1024L) return respond(client, 413, "Message is too large")
                         val text = readBody(input, length).toString(StandardCharsets.UTF_8)
                         getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
                             .putString("latest", text).putLong("latest_time", System.currentTimeMillis()).apply()
