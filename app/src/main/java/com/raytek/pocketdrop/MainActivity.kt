@@ -5,6 +5,9 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
@@ -38,7 +41,8 @@ class MainActivity : AppCompatActivity() {
             serverAddress.setText(parts[1])
             privateKey.setText(parts[2])
             saveConnection()
-            showStatus("Desktop connected ✓")
+            startPhoneReceiverAndRegister()
+            showStatus("PC connected ✓")
         } else {
             showStatus("That is not a PocketDrop QR code", true)
         }
@@ -59,11 +63,12 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
         privateKey.setText(prefs.getString("token", ""))
+        if (prefs.getString("server", "").orEmpty().isNotBlank()) startPhoneReceiverAndRegister()
 
         findViewById<Button>(R.id.scanQr).setOnClickListener {
             qrScanner.launch(ScanOptions().apply {
                 setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("Point at the QR code on your desktop")
+                setPrompt("Point at the QR code on your PC")
                 setBeepEnabled(false)
                 setOrientationLocked(false)
             })
@@ -71,7 +76,8 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.saveConnection).setOnClickListener {
             saveConnection()
-            showStatus("Connection saved")
+            startPhoneReceiverAndRegister()
+            showStatus("PC connection saved")
         }
         findViewById<Button>(R.id.sendMessage).setOnClickListener { sendMessage() }
         findViewById<Button>(R.id.chooseFiles).setOnClickListener {
@@ -123,6 +129,28 @@ class MainActivity : AppCompatActivity() {
         serverAddress.setText(normalizedServer())
     }
 
+    private fun startPhoneReceiverAndRegister() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 72)
+        }
+        val receiverIntent = Intent(this, PocketDropReceiverService::class.java)
+        startForegroundService(receiverIntent)
+        executor.execute {
+            try {
+                Thread.sleep(250)
+                val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+                val phoneToken = prefs.getString("phone_token", "") ?: ""
+                val phoneAddress = PocketDropReceiverService.localAddress()
+                if (phoneToken.isNotBlank() && phoneAddress.isNotBlank()) {
+                    postBytes("/api/register", "text/plain; charset=utf-8", "$phoneAddress|$phoneToken".toByteArray(StandardCharsets.UTF_8))
+                    runOnUiThread { showStatus("Two-way connection ready ✓") }
+                }
+            } catch (_: Exception) {
+                // Phone-to-PC sending still works; registration retries next launch or save.
+            }
+        }
+    }
+
     private fun normalizedServer(): String {
         var value = serverAddress.text.toString().trim().trimEnd('/')
         if (value.isNotEmpty() && !value.startsWith("http://") && !value.startsWith("https://")) {
@@ -133,7 +161,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun connectionIsReady(): Boolean {
         if (normalizedServer().isBlank() || privateKey.text.toString().trim().isBlank()) {
-            showStatus("Enter the desktop address and private key first", true)
+            showStatus("Enter the PC address and private key first", true)
             return false
         }
         saveConnection()
@@ -254,7 +282,7 @@ class MainActivity : AppCompatActivity() {
     private fun friendlyError(e: Exception): String {
         return when {
             e.message?.contains("401") == true || e.message?.contains("private key", true) == true -> "Private key rejected"
-            else -> "Could not reach desktop: ${e.message ?: "unknown error"}"
+            else -> "Could not reach PC: ${e.message ?: "unknown error"}"
         }
     }
 
