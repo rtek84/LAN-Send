@@ -20,6 +20,12 @@
                     android:layout_marginTop="1dp" android:text="Private transfers over local Wi-Fi"
                     android:textColor="@color/pocket_muted" android:textSize="13sp" />
             </LinearLayout>
+            <Button android:id="@+id/settingsButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="48dp" android:layout_height="48dp"
+                android:contentDescription="Settings" android:minWidth="0dp"
+                android:padding="0dp" android:text="⚙" android:textAllCaps="false"
+                android:textColor="@color/pocket_text_soft" android:textSize="23sp" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
