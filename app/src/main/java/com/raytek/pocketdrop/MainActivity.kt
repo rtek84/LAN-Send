@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity() {
             startPhoneReceiverAndRegister()
             showStatus("PC connected ✓")
         } else {
-            showStatus("That is not a PocketDrop QR code", true)
+            showStatus("That is not a LAN Send QR code", true)
         }
     }
 
@@ -245,7 +245,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         addAction("Open", { openIncomingFile(file, mime) })
-        addAction("Save to Downloads/PocketDrop", { saveToDownloads(file, name, mime) })
+        addAction("Save to Downloads/LAN Send", { saveToDownloads(file, name, mime) })
         addAction("Choose location…", { chooseSaveLocation(file, name, mime) })
 
         dialog = AlertDialog.Builder(this)
@@ -276,7 +276,7 @@ class MainActivity : AppCompatActivity() {
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
                     put(MediaStore.Downloads.MIME_TYPE, mime)
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PocketDrop")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/LAN Send")
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
                 val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -291,7 +291,7 @@ class MainActivity : AppCompatActivity() {
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 contentResolver.update(uri, values, null, null)
                 file.delete()
-                runOnUiThread { setBusy(false, "Saved to Downloads/PocketDrop ✓") }
+                runOnUiThread { setBusy(false, "Saved to Downloads/LAN Send ✓") }
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
             }
@@ -474,7 +474,7 @@ class MainActivity : AppCompatActivity() {
         var name: String? = null
         val cursor: Cursor? = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
         cursor?.use { if (it.moveToFirst()) name = it.getString(0) }
-        return name ?: "PocketDrop_${System.currentTimeMillis()}"
+        return name ?: "LANSend_${System.currentTimeMillis()}"
     }
 
     private fun updateSelectedFiles() {
