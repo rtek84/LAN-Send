@@ -247,7 +247,7 @@ $xaml = @"
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Border Width="46" Height="46" CornerRadius="13" Background="#4664F5" VerticalAlignment="Center">
-        <TextBlock Text="P↓" Foreground="White" FontSize="21" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <TextBlock Text="PD" Foreground="White" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
       </Border>
       <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="PocketDrop" FontSize="27" FontWeight="SemiBold" Foreground="#182033"/>
@@ -317,7 +317,7 @@ $xaml = @"
     </Border>
 
     <Border Grid.Row="5" Margin="0,12,0,0" Background="#EDF9F2" CornerRadius="10" Padding="12,8">
-      <TextBlock Name="StatusText" Text="●  Listening - ready to receive" Foreground="#16834B" FontWeight="SemiBold" FontSize="12"/>
+      <TextBlock Name="StatusText" Text="Listening - ready to receive" Foreground="#16834B" FontWeight="SemiBold" FontSize="12"/>
     </Border>
   </Grid>
 </Window>
