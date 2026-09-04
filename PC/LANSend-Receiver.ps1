@@ -38,12 +38,15 @@ Initialize-NetworkAccess
 if (Test-Path $ConfigPath) {
     $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 } else {
-    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = '' }
+    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = ''; PcDeviceId = ([guid]::NewGuid().ToString('N')); PairedPhoneId = '' }
     $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 }
 if (-not $Config.PSObject.Properties['PhoneAddress']) { $Config | Add-Member NoteProperty PhoneAddress '' }
 if (-not $Config.PSObject.Properties['PhoneToken']) { $Config | Add-Member NoteProperty PhoneToken '' }
-$Token = [string]$Config.Token
+if (-not $Config.PSObject.Properties['PcDeviceId']) { $Config | Add-Member NoteProperty PcDeviceId ([guid]::NewGuid().ToString('N')) }
+if (-not $Config.PSObject.Properties['PairedPhoneId']) { $Config | Add-Member NoteProperty PairedPhoneId '' }
+$Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+$script:Token = [string]$Config.Token
 $Inbox = [string]$Config.Inbox
 New-Item -ItemType Directory -Path $Inbox -Force | Out-Null
 
@@ -196,10 +199,23 @@ public static class PocketDropQr {
 '@ -ReferencedAssemblies System.Drawing
 
 $QrPath = Join-Path $AppFolder 'pairing-qr.png'
-$QrPayload = "pocketdrop|$Address|$Token"
-$QrBitmap = [PocketDropQr]::Create($QrPayload, 6)
-$QrBitmap.Save($QrPath, [System.Drawing.Imaging.ImageFormat]::Png)
-$QrBitmap.Dispose()
+function Update-PairingQr {
+    $payload = "pocketdrop|$Address|$script:Token|$($Config.PcDeviceId)"
+    $bitmap = [PocketDropQr]::Create($payload, 6)
+    $bitmap.Save($QrPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bitmap.Dispose()
+    if ($script:QrImage) {
+        $source = New-Object Windows.Media.Imaging.BitmapImage
+        $source.BeginInit(); $source.CacheOption = 'OnLoad'; $source.UriSource = [Uri]$QrPath; $source.EndInit()
+        $script:QrImage.Source = $source
+    }
+}
+Update-PairingQr
+
+function Get-MaskedToken {
+    if ($script:Token.Length -le 8) { return ('*' * $script:Token.Length) }
+    return "$($script:Token.Substring(0,4))$([char]0x2022)$([char]0x2022)$([char]0x2022)$([char]0x2022)$([char]0x2022)$([char]0x2022)$([char]0x2022)$([char]0x2022)$($script:Token.Substring($script:Token.Length - 4))"
+}
 
 $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -342,8 +358,9 @@ if (Test-Path $LogoPath) {
 }
 if (Test-Path $IconPath) { $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([Uri]$IconPath) }
 $addressBox = $window.FindName('AddressBox'); $addressBox.Text = $Address
-$tokenBox = $window.FindName('TokenBox'); $tokenBox.Text = $Token
+$tokenBox = $window.FindName('TokenBox'); $tokenBox.Text = Get-MaskedToken
 $qrImage = $window.FindName('QrImage')
+$script:QrImage = $qrImage
 $qrSource = New-Object Windows.Media.Imaging.BitmapImage
 $qrSource.BeginInit(); $qrSource.CacheOption = 'OnLoad'; $qrSource.UriSource = [Uri]$QrPath; $qrSource.EndInit()
 $qrImage.Source = $qrSource
@@ -418,11 +435,25 @@ function Save-InboxSetting([string]$Path) {
     $window.FindName('StatusText').Text = "Inbox changed to $Path"
 }
 
+function Reset-PairingSecurity([string]$StatusMessage) {
+    $script:Token = [guid]::NewGuid().ToString('N')
+    $Config.Token = $script:Token
+    $Config.PhoneAddress = ''
+    $Config.PhoneToken = ''
+    $Config.PairedPhoneId = ''
+    $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+    $tokenBox.Text = Get-MaskedToken
+    Update-PairingQr
+    $phoneStatus.Text = 'Phone not connected'
+    $phoneStatus.Foreground = '#A66500'
+    $window.FindName('StatusText').Text = $StatusMessage
+}
+
 function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LAN Send settings" Width="570" Height="290" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="430" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
     <Style TargetType="Button">
@@ -444,7 +475,7 @@ function Show-SettingsWindow {
     </Style>
   </Window.Resources>
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <TextBlock Text="PC inbox folder" FontSize="21" FontWeight="SemiBold" Foreground="#182033"/>
     <TextBlock Grid.Row="1" Margin="0,7,0,14" Text="Files received from your phone are saved here." Foreground="#758096" FontSize="13"/>
     <TextBox Name="InboxPathBox" Grid.Row="2" Height="42" IsReadOnly="True" VerticalContentAlignment="Center"
@@ -454,6 +485,14 @@ function Show-SettingsWindow {
       <Button Name="RestoreButton" Content="Restore default" Width="120" Height="38" Margin="0,0,8,0"/>
       <Button Name="OpenButton" Content="Open folder" Width="105" Height="38" Margin="0,0,8,0"/>
       <Button Name="ChooseButton" Content="Change folder" Width="115" Height="38" Background="#4664F5" Foreground="White"/>
+    </StackPanel>
+    <Border Grid.Row="5" Height="1" Background="#DCE2EE" Margin="0,20,0,16"/>
+    <TextBlock Grid.Row="6" Text="Security" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+    <TextBlock Grid.Row="7" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
+               TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
+    <StackPanel Grid.Row="8" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Name="ForgetPhoneButton" Content="Forget paired phone" Width="145" Height="38" Margin="0,0,8,0" Foreground="#B42318" Background="#FFF0EE"/>
+      <Button Name="RegenerateKeyButton" Content="Regenerate private key" Width="165" Height="38" Foreground="White" Background="#4664F5"/>
     </StackPanel>
   </Grid>
 </Window>
@@ -490,6 +529,30 @@ function Show-SettingsWindow {
         $pathBox.Text = $script:Inbox
         $savedText.Text = 'Default folder restored'
     })
+    $settingsWindow.FindName('ForgetPhoneButton').add_Click({
+        $answer = [System.Windows.MessageBox]::Show(
+            'This revokes the current phone connection and creates a new private key. You will need to scan the updated QR code again. Transferred files will not be deleted.',
+            'Forget paired phone?',
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Warning
+        )
+        if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+            Reset-PairingSecurity 'Paired phone forgotten - scan the new QR code to connect'
+            $settingsWindow.Close()
+        }
+    })
+    $settingsWindow.FindName('RegenerateKeyButton').add_Click({
+        $answer = [System.Windows.MessageBox]::Show(
+            'The current phone will stop connecting immediately. A new private key and QR code will be created. Continue?',
+            'Regenerate private key?',
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Warning
+        )
+        if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+            Reset-PairingSecurity 'Private key regenerated - scan the new QR code to reconnect'
+            $settingsWindow.Close()
+        }
+    })
     [void]$settingsWindow.ShowDialog()
 }
 
@@ -507,8 +570,12 @@ function Receive-Request($context) {
         if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/ping') {
             Send-Response $context 200 'LAN Send is ready'; return
         }
-        if ($context.Request.Headers['X-PocketDrop-Token'] -ne $Token) {
+        if ($context.Request.Headers['X-PocketDrop-Token'] -ne $script:Token) {
             Send-Response $context 401 'Private key rejected'; return
+        }
+        $requestDeviceId = [string]$context.Request.Headers['X-PocketDrop-Device']
+        if ($Config.PairedPhoneId -and $requestDeviceId -ne [string]$Config.PairedPhoneId) {
+            Send-Response $context 403 'Paired device required'; return
         }
         if ($context.Request.HttpMethod -ne 'POST') { Send-Response $context 405 'POST required'; return }
 
@@ -516,10 +583,13 @@ function Receive-Request($context) {
             '/api/register' {
                 $reader = New-Object IO.StreamReader($context.Request.InputStream, [Text.Encoding]::UTF8)
                 $registration = $reader.ReadToEnd(); $reader.Dispose()
-                $parts = $registration -split '\|', 2
-                if ($parts.Count -ne 2 -or $parts[0] -notmatch '^http://') { Send-Response $context 400 'Invalid phone registration'; return }
+                $parts = $registration -split '\|', 3
+                if ($parts.Count -lt 2 -or $parts[0] -notmatch '^http://') { Send-Response $context 400 'Invalid phone registration'; return }
+                $phoneDeviceId = if ($parts.Count -ge 3) { [string]$parts[2] } else { '' }
+                if ($phoneDeviceId -and $requestDeviceId -and $phoneDeviceId -ne $requestDeviceId) { Send-Response $context 400 'Invalid device identity'; return }
                 $Config.PhoneAddress = $parts[0].TrimEnd('/')
                 $Config.PhoneToken = $parts[1]
+                if ($phoneDeviceId) { $Config.PairedPhoneId = $phoneDeviceId }
                 $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
                 $phoneStatus.Text = "Connected: $($Config.PhoneAddress)"; $phoneStatus.Foreground = '#2E7D32'
                 Add-History 'Phone connected for two-way transfers'
@@ -568,6 +638,7 @@ function Send-ToPhone([string]$Path, [byte[]]$Bytes, [string]$ContentType, [stri
     $request.Method = 'POST'; $request.ContentType = $ContentType; $request.ContentLength = $Bytes.Length
     $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
     $request.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+    $request.Headers.Add('X-PocketDrop-Device', [string]$Config.PcDeviceId)
     if ($FileName) { $request.Headers.Add('X-File-Name', [Uri]::EscapeDataString($FileName)) }
     $stream = $request.GetRequestStream(); $stream.Write($Bytes, 0, $Bytes.Length); $stream.Dispose()
     $response = $request.GetResponse(); $response.Dispose()
@@ -585,6 +656,7 @@ function Test-PhoneConnection {
         $request.Timeout = 1800
         $request.ReadWriteTimeout = 1800
         $request.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+        $request.Headers.Add('X-PocketDrop-Device', [string]$Config.PcDeviceId)
         $response = $request.GetResponse()
         $response.Dispose()
         $phoneStatus.Text = 'Phone online'
@@ -634,6 +706,7 @@ function Send-FileToPhone([string]$FilePath, [long]$CompletedBefore = 0, [long]$
         $request.ReadWriteTimeout = 120000
         $request.AllowWriteStreamBuffering = $false
         $request.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+        $request.Headers.Add('X-PocketDrop-Device', [string]$Config.PcDeviceId)
         $request.Headers.Add('X-File-Name', [Uri]::EscapeDataString($file.Name))
         $input = [IO.File]::OpenRead($file.FullName)
         try {
@@ -702,7 +775,7 @@ $heartbeatTimer.Start()
 Test-PhoneConnection
 
 $window.FindName('CopyButton').add_Click({
-    [System.Windows.Clipboard]::SetText("PC address: $Address`r`nPrivate key: $Token")
+    [System.Windows.Clipboard]::SetText("PC address: $Address`r`nPrivate key: $script:Token")
     $window.FindName('StatusText').Text = 'Setup copied'
 })
 $window.FindName('FolderButton').add_Click({ Start-Process explorer.exe $Inbox })
