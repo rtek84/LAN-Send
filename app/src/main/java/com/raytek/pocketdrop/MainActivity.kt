@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var receivedFromPc: TextView
     private lateinit var transferActivity: TextView
+    private lateinit var showAllHistory: View
     private lateinit var connectionStatus: TextView
     private val heartbeatHandler = Handler(Looper.getMainLooper())
     private val heartbeat = object : Runnable {
@@ -152,9 +154,11 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         receivedFromPc = findViewById(R.id.receivedFromPc)
         transferActivity = findViewById(R.id.transferActivity)
+        showAllHistory = findViewById(R.id.showAllHistory)
         connectionStatus = findViewById(R.id.connectionStatus)
         findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
         findViewById<View>(R.id.clearHistory).setOnClickListener { confirmClearHistory() }
+        showAllHistory.setOnClickListener { showFullTransferHistory() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -218,6 +222,40 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showFullTransferHistory() {
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val fullHistory = TextView(this).apply {
+            text = TransferHistory.displayText(this@MainActivity)
+            setTextColor(getColor(R.color.pocket_text_soft))
+            textSize = 13f
+            setLineSpacing(0f, 1.35f)
+            setPadding(padding, padding, padding, padding)
+        }
+        val scroll = ScrollView(this).apply { addView(fullHistory) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Transfer activity")
+            .setView(scroll)
+            .setNeutralButton("Clear", null)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle("Clear transfer activity?")
+                    .setMessage("This removes the activity history only. Your transferred files will not be deleted.")
+                    .setNegativeButton("No", null)
+                    .setPositiveButton("Yes") { _, _ ->
+                        TransferHistory.clear(this)
+                        refreshTransferActivity()
+                        dialog.dismiss()
+                        showStatus("Transfer activity cleared")
+                    }
+                    .show()
+            }
+        }
+        dialog.show()
+    }
+
     override fun onStop() {
         heartbeatHandler.removeCallbacks(heartbeat)
         if (receiverRegistered) {
@@ -242,7 +280,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshTransferActivity() {
-        transferActivity.text = TransferHistory.displayText(this)
+        transferActivity.text = TransferHistory.displayText(this, 30)
+        showAllHistory.visibility = if (TransferHistory.count(this) > 30) View.VISIBLE else View.GONE
     }
 
     override fun onNewIntent(intent: Intent) {
