@@ -453,7 +453,7 @@ function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LAN Send settings" Width="570" Height="465" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="450" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
     <Style TargetType="Button">
@@ -491,7 +491,7 @@ function Show-SettingsWindow {
     <TextBlock Grid.Row="7" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
                TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
     <StackPanel Grid.Row="8" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-      <Button Name="ForgetPhoneButton" Content="Forget paired phone" Width="145" Height="38" Margin="0,0,8,0" Foreground="#B42318" Background="#FFF0EE"/>
+      <Button Name="ForgetPhoneButton" Content="Forget paired phone" Width="165" Height="38" Margin="0,0,8,0" Foreground="#B42318" Background="#FFF0EE"/>
       <Button Name="RegenerateKeyButton" Content="Regenerate private key" Width="165" Height="38" Foreground="White" Background="#4664F5"/>
     </StackPanel>
   </Grid>
