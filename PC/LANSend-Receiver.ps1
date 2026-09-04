@@ -423,7 +423,7 @@ function Show-SettingsWindow {
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.86"/></Trigger>
             <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.70"/></Trigger>
           </ControlTemplate.Triggers>
-        </Setter.Value>
+        </ControlTemplate></Setter.Value>
       </Setter>
     </Style>
   </Window.Resources>
