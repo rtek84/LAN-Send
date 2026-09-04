@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PocketDrop"
+rootProject.name = "LAN Send"
 include(":app")
