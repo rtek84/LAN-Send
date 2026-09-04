@@ -200,55 +200,125 @@ $QrBitmap.Dispose()
 
 $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="PocketDrop PC" Width="720" Height="790" WindowStartupLocation="CenterScreen"
-        Background="#F5F7FC" FontFamily="Segoe UI" ResizeMode="CanMinimize" AllowDrop="True">
-  <Grid Margin="26">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PocketDrop PC" Width="780" Height="850" MinWidth="700" MinHeight="720"
+        WindowStartupLocation="CenterScreen" Background="#F5F7FC" FontFamily="Segoe UI"
+        ResizeMode="CanResize" AllowDrop="True">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Foreground" Value="White"/><Setter Property="Background" Value="#4664F5"/>
+      <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="16,9"/>
+      <Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="Button">
+          <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.72"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.4"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="SoftButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Foreground" Value="#3048C9"/><Setter Property="Background" Value="#EEF1FF"/>
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="BorderBrush" Value="#DCE2EE"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Background" Value="#F9FAFD"/><Setter Property="Foreground" Value="#182033"/>
+      <Setter Property="Padding" Value="10,8"/><Setter Property="FontSize" Value="13"/>
+    </Style>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="White"/><Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="BorderBrush" Value="#E1E6F0"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="18"/>
+    </Style>
+  </Window.Resources>
+
+  <Grid Margin="24,20,24,18">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <TextBlock Text="PocketDrop" FontSize="31" FontWeight="SemiBold" Foreground="#1F2937"/>
-    <TextBlock Grid.Row="1" Margin="0,4,0,20" Text="Private transfers between your phone and PC" Foreground="#64748B" FontSize="14"/>
-    <Border Grid.Row="2" Background="White" CornerRadius="14" Padding="18" BorderBrush="#E2E8F0" BorderThickness="1">
+
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border Width="46" Height="46" CornerRadius="13" Background="#4664F5" VerticalAlignment="Center">
+        <TextBlock Text="P↓" Foreground="White" FontSize="21" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      </Border>
+      <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="PocketDrop" FontSize="27" FontWeight="SemiBold" Foreground="#182033"/>
+        <TextBlock Text="Private transfers over local Wi-Fi" Foreground="#758096" FontSize="13"/>
+      </StackPanel>
+    </Grid>
+
+    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,18,0,0">
       <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Border Background="White" CornerRadius="8" Padding="4" BorderBrush="#E2E8F0" BorderThickness="1">
-          <Image Name="QrImage" Width="196" Height="196" Stretch="Uniform"/>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border Background="#F7F8FC" CornerRadius="12" Padding="8" BorderBrush="#E1E6F0" BorderThickness="1">
+          <Image Name="QrImage" Width="150" Height="150" Stretch="Uniform"/>
         </Border>
-        <StackPanel Grid.Column="1" Margin="22,6,0,0">
-          <TextBlock Text="SCAN WITH POCKETDROP" FontSize="11" FontWeight="Bold" Foreground="#536DFE"/>
-          <TextBlock Margin="0,5,0,19" Text="Open PocketDrop on your phone and tap Connect to PC." TextWrapping="Wrap" Foreground="#475569" FontSize="14"/>
-          <TextBlock Text="PC ADDRESS" FontSize="10" FontWeight="Bold" Foreground="#94A3B8"/>
-          <TextBox Name="AddressBox" Margin="0,3,0,12" FontSize="15" IsReadOnly="True" BorderThickness="0" Background="Transparent"/>
-          <TextBlock Text="PRIVATE KEY" FontSize="10" FontWeight="Bold" Foreground="#94A3B8"/>
-          <TextBox Name="TokenBox" Margin="0,3,0,0" FontSize="13" IsReadOnly="True" BorderThickness="0" Background="Transparent"/>
-        </StackPanel>
+        <Grid Grid.Column="1" Margin="20,1,0,0">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <TextBlock Text="CONNECT YOUR PHONE" FontSize="11" FontWeight="Bold" Foreground="#4664F5"/>
+          <TextBlock Grid.Row="1" Margin="0,5,0,12" Text="Open PocketDrop on your phone and scan this QR code."
+                     TextWrapping="Wrap" Foreground="#536078" FontSize="13"/>
+          <Border Grid.Row="2" Background="#F7F8FC" CornerRadius="9" Padding="11,8" Margin="0,0,0,8">
+            <StackPanel><TextBlock Text="PC ADDRESS" FontSize="9" FontWeight="Bold" Foreground="#8792A8"/>
+              <TextBox Name="AddressBox" Margin="-10,0" Padding="10,2" FontSize="14" IsReadOnly="True" BorderThickness="0" Background="Transparent"/></StackPanel>
+          </Border>
+          <Border Grid.Row="3" Background="#F7F8FC" CornerRadius="9" Padding="11,8">
+            <StackPanel><TextBlock Text="PRIVATE KEY" FontSize="9" FontWeight="Bold" Foreground="#8792A8"/>
+              <TextBox Name="TokenBox" Margin="-10,0" Padding="10,2" FontSize="12" IsReadOnly="True" BorderThickness="0" Background="Transparent"/></StackPanel>
+          </Border>
+        </Grid>
       </Grid>
     </Border>
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,14,0,14">
-      <Button Name="CopyButton" Content="Copy setup" Width="110" Height="34" Margin="0,0,8,0"/>
-      <Button Name="FolderButton" Content="Open inbox" Width="110" Height="34" Margin="0,0,8,0"/>
-      <CheckBox Name="StartupBox" Content="Start with Windows" VerticalAlignment="Center" Margin="8,0,0,0"/>
-    </StackPanel>
-    <Border Grid.Row="4" Margin="0,0,0,14" Background="White" CornerRadius="12" Padding="16" BorderBrush="#E2E8F0" BorderThickness="1">
+
+    <Grid Grid.Row="2" Margin="0,12,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Button Name="CopyButton" Content="Copy setup" Width="112" Height="38"/>
+      <Button Name="FolderButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Open inbox" Width="112" Height="38" Margin="8,0,0,0"/>
+      <CheckBox Name="StartupBox" Grid.Column="2" Content="Start with Windows" VerticalAlignment="Center" HorizontalAlignment="Right"
+                Foreground="#536078" Margin="16,0,2,0"/>
+    </Grid>
+
+    <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,0,0,12">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <DockPanel>
-          <TextBlock Text="Send to phone" FontSize="17" FontWeight="SemiBold" Foreground="#1F2937"/>
-          <TextBlock Name="PhoneStatus" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#B45309" Text="Phone not connected"/>
-        </DockPanel>
-        <TextBox Name="PhoneMessageBox" Grid.Row="1" Height="58" Margin="0,12,0,10" Padding="10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-        <StackPanel Grid.Row="2" Orientation="Horizontal">
-          <Button Name="SendPhoneMessageButton" Content="Send message" Width="120" Height="36" Margin="0,0,8,0"/>
-          <Button Name="SendPhoneFileButton" Content="Choose file" Width="110" Height="36" Margin="0,0,12,0"/>
-          <TextBlock VerticalAlignment="Center" Foreground="#94A3B8" Text="or drop files anywhere on this window"/>
-        </StackPanel>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock Text="Send to phone" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+          <Border Grid.Column="1" Background="#FFF7E6" CornerRadius="9" Padding="10,5">
+            <TextBlock Name="PhoneStatus" Foreground="#A66500" FontSize="11" FontWeight="SemiBold" Text="Phone not connected"/>
+          </Border>
+        </Grid>
+        <TextBox Name="PhoneMessageBox" Grid.Row="1" Height="66" Margin="0,13,0,10" AcceptsReturn="True"
+                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="Type a message or link"/>
+        <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <Button Name="SendPhoneMessageButton" Content="Send message" Width="126" Height="38"/>
+          <Button Name="SendPhoneFileButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Choose file" Width="112" Height="38" Margin="8,0,0,0"/>
+          <TextBlock Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8792A8"
+                     FontSize="12" Text="You can also drop files anywhere here"/>
+        </Grid>
       </Grid>
     </Border>
-    <GroupBox Grid.Row="5" Header="Transfer activity" Background="White" Padding="8">
-      <ListBox Name="HistoryList" BorderThickness="0" Background="White"/>
-    </GroupBox>
-    <TextBlock Name="StatusText" Grid.Row="6" Margin="0,14,0,0" Text="Listening - ready to receive" Foreground="#2E7D32" FontWeight="SemiBold"/>
+
+    <Border Grid.Row="4" Style="{StaticResource Card}" Padding="18,15,18,12">
+      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock Text="Transfer activity" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+        <Border Grid.Row="1" Margin="0,11,0,0" Background="#F7F8FC" CornerRadius="10" Padding="8">
+          <ListBox Name="HistoryList" BorderThickness="0" Background="Transparent" Foreground="#364158"
+                   FontSize="13" Padding="4" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="5" Margin="0,12,0,0" Background="#EDF9F2" CornerRadius="10" Padding="12,8">
+      <TextBlock Name="StatusText" Text="●  Listening - ready to receive" Foreground="#16834B" FontWeight="SemiBold" FontSize="12"/>
+    </Border>
   </Grid>
 </Window>
 "@
