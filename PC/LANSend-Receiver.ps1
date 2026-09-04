@@ -453,7 +453,7 @@ function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LAN Send settings" Width="570" Height="430" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="465" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
     <Style TargetType="Button">
