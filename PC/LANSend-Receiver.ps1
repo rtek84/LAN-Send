@@ -314,7 +314,10 @@ $xaml = @"
 
     <Border Grid.Row="4" Style="{StaticResource Card}" Padding="18,15,18,12">
       <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <TextBlock Text="Transfer activity" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock Text="Transfer activity" FontSize="18" FontWeight="SemiBold" Foreground="#182033" VerticalAlignment="Center"/>
+          <Button Name="ClearHistoryButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Clear" Width="68" Height="32" Padding="10,5"/>
+        </Grid>
         <Border Grid.Row="1" Margin="0,11,0,0" Background="#F7F8FC" CornerRadius="10" Padding="8">
           <ListBox Name="HistoryList" BorderThickness="0" Background="Transparent" Foreground="#364158"
                    FontSize="13" Padding="4" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
@@ -345,6 +348,19 @@ $qrSource = New-Object Windows.Media.Imaging.BitmapImage
 $qrSource.BeginInit(); $qrSource.CacheOption = 'OnLoad'; $qrSource.UriSource = [Uri]$QrPath; $qrSource.EndInit()
 $qrImage.Source = $qrSource
 $historyList = $window.FindName('HistoryList')
+$clearHistoryButton = $window.FindName('ClearHistoryButton')
+$clearHistoryButton.add_Click({
+    $answer = [System.Windows.MessageBox]::Show(
+        'This removes the activity history only. Your transferred files will not be deleted.',
+        'Clear transfer activity?',
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Warning
+    )
+    if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+        $historyList.Items.Clear()
+        $window.FindName('StatusText').Text = 'Transfer activity cleared'
+    }
+})
 $phoneStatus = $window.FindName('PhoneStatus')
 if ($Config.PhoneAddress) { $phoneStatus.Text = "Connected: $($Config.PhoneAddress)"; $phoneStatus.Foreground = '#2E7D32' }
 $legacyStartupWasEnabled = Test-Path $LegacyStartupShortcut
