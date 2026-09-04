@@ -155,5 +155,28 @@
             android:text="Ready"
             android:textColor="#536DFE"
             android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="Transfer activity"
+            android:textColor="#202124"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/transferActivity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="28dp"
+            android:background="#FFFFFF"
+            android:minHeight="120dp"
+            android:padding="16dp"
+            android:text="No transfers yet"
+            android:textColor="#374151"
+            android:textSize="14sp"
+            android:lineSpacingExtra="7dp" />
     </LinearLayout>
 </ScrollView>
