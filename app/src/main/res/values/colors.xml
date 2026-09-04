@@ -1,5 +1,15 @@
 <resources>
-    <color name="pocket_blue">#536DFE</color>
-    <color name="pocket_blue_dark">#304FFE</color>
-    <color name="pocket_surface">#F6F7FB</color>
+    <color name="pocket_blue">#4664F5</color>
+    <color name="pocket_blue_dark">#3048C9</color>
+    <color name="pocket_surface">#F5F7FC</color>
+    <color name="pocket_card">#FFFFFF</color>
+    <color name="pocket_border">#E1E6F0</color>
+    <color name="pocket_text">#182033</color>
+    <color name="pocket_text_soft">#364158</color>
+    <color name="pocket_muted">#758096</color>
+    <color name="pocket_activity_surface">#F7F8FC</color>
+    <color name="pocket_success_surface">#EDF9F2</color>
+    <color name="pocket_success_border">#C9EBD7</color>
+    <color name="pocket_success">#16834B</color>
+    <color name="pocket_success_text">#25613F</color>
 </resources>
