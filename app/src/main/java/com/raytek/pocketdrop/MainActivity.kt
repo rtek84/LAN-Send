@@ -16,8 +16,11 @@ import android.content.pm.PackageManager
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.View
+import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -216,18 +219,42 @@ class MainActivity : AppCompatActivity() {
     private fun reviewIncomingFile(name: String, path: String, mime: String) {
         val file = File(path)
         if (!file.exists()) return showStatus("The temporary file is no longer available", true)
-        AlertDialog.Builder(this)
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 4, 24, 8)
+        }
+        var dialog: AlertDialog? = null
+
+        fun addAction(label: String, action: () -> Unit) {
+            actions.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                text = label
+                isAllCaps = false
+                textSize = 16f
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setTextColor(getColor(R.color.pocket_blue))
+                minHeight = 56
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener {
+                    dialog?.dismiss()
+                    action()
+                }
+            })
+        }
+
+        addAction("Open", { openIncomingFile(file, mime) })
+        addAction("Save to Downloads/PocketDrop", { saveToDownloads(file, name, mime) })
+        addAction("Choose location…", { chooseSaveLocation(file, name, mime) })
+
+        dialog = AlertDialog.Builder(this)
             .setTitle("File received from PC")
             .setMessage(name)
-            .setItems(arrayOf("Open", "Save to Downloads/PocketDrop", "Choose location…")) { _, which ->
-                when (which) {
-                    0 -> openIncomingFile(file, mime)
-                    1 -> saveToDownloads(file, name, mime)
-                    2 -> chooseSaveLocation(file, name, mime)
-                }
-            }
+            .setView(actions)
             .setNegativeButton("Not now", null)
-            .show()
+            .create()
+        dialog.show()
     }
 
     private fun openIncomingFile(file: File, mime: String) {
