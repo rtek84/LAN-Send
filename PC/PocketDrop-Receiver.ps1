@@ -5,6 +5,8 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 
 $Port = 8734
 $AppFolder = Join-Path $env:LOCALAPPDATA 'PocketDrop'
+$LogoPath = Join-Path $PSScriptRoot 'LAN-Send-Logo.png'
+$IconPath = Join-Path $PSScriptRoot 'LAN-Send.ico'
 $ConfigPath = Join-Path $AppFolder 'config.json'
 $Inbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LAN Send Inbox'
 $StartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\LAN Send Receiver.lnk'
@@ -247,8 +249,8 @@ $xaml = @"
 
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border Width="46" Height="46" CornerRadius="13" Background="#4664F5" VerticalAlignment="Center">
-        <TextBlock Text="PD" Foreground="White" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      <Border Width="46" Height="46" CornerRadius="13" Background="#4664F5" VerticalAlignment="Center" ClipToBounds="True">
+        <Image Name="LogoImage" Stretch="UniformToFill"/>
       </Border>
       <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="LAN Send" FontSize="27" FontWeight="SemiBold" Foreground="#182033"/>
@@ -326,6 +328,13 @@ $xaml = @"
 
 $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
+$logoImage = $window.FindName('LogoImage')
+if (Test-Path $LogoPath) {
+    $logoSource = New-Object Windows.Media.Imaging.BitmapImage
+    $logoSource.BeginInit(); $logoSource.CacheOption = 'OnLoad'; $logoSource.UriSource = [Uri]$LogoPath; $logoSource.EndInit()
+    $logoImage.Source = $logoSource
+}
+if (Test-Path $IconPath) { $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([Uri]$IconPath) }
 $addressBox = $window.FindName('AddressBox'); $addressBox.Text = $Address
 $tokenBox = $window.FindName('TokenBox'); $tokenBox.Text = $Token
 $qrImage = $window.FindName('QrImage')
@@ -348,7 +357,7 @@ if ($legacyStartupWasEnabled -and -not (Test-Path $StartupShortcut)) {
 $startupBox = $window.FindName('StartupBox'); $startupBox.IsChecked = Test-Path $StartupShortcut
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
-$notify.Icon = [System.Drawing.SystemIcons]::Information
+$notify.Icon = if (Test-Path $IconPath) { New-Object System.Drawing.Icon($IconPath) } else { [System.Drawing.SystemIcons]::Information }
 $notify.Text = 'LAN Send Receiver'
 $notify.Visible = $true
 $notify.add_DoubleClick({ $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
