@@ -22,7 +22,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 class PocketDropReceiverService : Service() {
-    private val workers = Executors.newCachedThreadPool()
+    private val listenerWorker = Executors.newSingleThreadExecutor()
+    private val transferWorkers = Executors.newFixedThreadPool(4)
     @Volatile private var running = true
     private var server: ServerSocket? = null
 
@@ -42,13 +43,16 @@ class PocketDropReceiverService : Service() {
         if (prefs.getString("phone_token", null).isNullOrBlank()) {
             prefs.edit().putString("phone_token", UUID.randomUUID().toString().replace("-", "")).apply()
         }
-        workers.execute { listen() }
+        listenerWorker.execute { listen() }
     }
 
     private fun listen() {
         try {
             server = ServerSocket(PORT)
-            while (running) workers.execute { handle(server!!.accept()) }
+            while (running) {
+                val client = server!!.accept()
+                transferWorkers.execute { handle(client) }
+            }
         } catch (_: Exception) { }
     }
 
@@ -157,7 +161,13 @@ class PocketDropReceiverService : Service() {
                 .setContentTitle(title).setContentText(text).setAutoCancel(true).build())
     }
 
-    override fun onDestroy() { running = false; server?.close(); workers.shutdownNow(); super.onDestroy() }
+    override fun onDestroy() {
+        running = false
+        server?.close()
+        listenerWorker.shutdownNow()
+        transferWorkers.shutdownNow()
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
