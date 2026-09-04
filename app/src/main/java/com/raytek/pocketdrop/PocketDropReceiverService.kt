@@ -4,12 +4,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.ContentValues
 import android.content.Intent
-import android.os.Environment
 import android.os.IBinder
-import android.provider.MediaStore
+import android.net.Uri
 import androidx.core.app.NotificationCompat
+import java.io.File
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.net.Inet4Address
@@ -88,13 +87,20 @@ class PocketDropReceiverService : Service() {
                     "/api/file" -> {
                         val encoded = headers["x-file-name"] ?: "PocketDrop_file"
                         val name = URLDecoder.decode(encoded, "UTF-8").substringAfterLast('/').substringAfterLast('\\')
-                        saveDownload(name, headers["content-type"] ?: "application/octet-stream", input, length)
+                        val mime = headers["content-type"] ?: "application/octet-stream"
+                        val file = saveIncomingFile(name, input, length)
                         getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
-                            .putString("latest_file", name).putLong("latest_file_time", System.currentTimeMillis()).apply()
+                            .putString("latest_file", name)
+                            .putString("latest_file_path", file.absolutePath)
+                            .putString("latest_file_mime", mime)
+                            .putLong("latest_file_time", System.currentTimeMillis()).apply()
                         TransferHistory.add(this, "Received file: $name")
                         sendBroadcast(Intent(ACTION_RECEIVED).setPackage(packageName)
-                            .putExtra(EXTRA_TYPE, "file").putExtra(EXTRA_VALUE, name))
-                        notifyArrival("File received", name)
+                            .putExtra(EXTRA_TYPE, "file")
+                            .putExtra(EXTRA_VALUE, name)
+                            .putExtra(EXTRA_PATH, file.absolutePath)
+                            .putExtra(EXTRA_MIME, mime))
+                        notifyFileArrival(name, file.absolutePath, mime)
                         respond(client, 200, "OK")
                     }
                     else -> respond(client, 404, "Not found")
@@ -103,15 +109,16 @@ class PocketDropReceiverService : Service() {
         }
     }
 
-    private fun saveDownload(name: String, mime: String, input: BufferedInputStream, length: Long) {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, mime)
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PocketDrop")
-            put(MediaStore.Downloads.IS_PENDING, 1)
+    private fun saveIncomingFile(name: String, input: BufferedInputStream, length: Long): File {
+        val directory = File(getExternalFilesDir(null) ?: filesDir, "incoming").apply { mkdirs() }
+        val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "PocketDrop_file" }
+        var file = File(directory, safeName)
+        if (file.exists()) {
+            val base = safeName.substringBeforeLast('.', safeName)
+            val extension = safeName.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
+            file = File(directory, "${base}_${System.currentTimeMillis()}$extension")
         }
-        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Cannot create download")
-        contentResolver.openOutputStream(uri)?.use { output ->
+        file.outputStream().buffered().use { output ->
             var remaining = length
             val buffer = ByteArray(64 * 1024)
             while (remaining > 0) {
@@ -120,8 +127,7 @@ class PocketDropReceiverService : Service() {
                 output.write(buffer, 0, count); remaining -= count
             }
         }
-        values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
-        contentResolver.update(uri, values, null, null)
+        return file
     }
 
     private fun readBody(input: BufferedInputStream, length: Long): ByteArray {
@@ -164,9 +170,31 @@ class PocketDropReceiverService : Service() {
     }
 
     private fun notifyArrival(title: String, text: String) {
+        val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         getSystemService(NotificationManager::class.java).notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
             NotificationCompat.Builder(this, CHANNEL_ARRIVALS).setSmallIcon(R.drawable.ic_launcher)
-                .setContentTitle(title).setContentText(text).setAutoCancel(true).build())
+                .setContentTitle(title).setContentText(text).setContentIntent(openApp).setAutoCancel(true).build())
+    }
+
+    private fun notifyFileArrival(name: String, path: String, mime: String) {
+        val id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+        val review = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_REVIEW_FILE
+            data = Uri.parse("pocketdrop://arrival/$id")
+            putExtra(EXTRA_VALUE, name)
+            putExtra(EXTRA_PATH, path)
+            putExtra(EXTRA_MIME, mime)
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pending = PendingIntent.getActivity(this, id, review, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        getSystemService(NotificationManager::class.java).notify(id,
+            NotificationCompat.Builder(this, CHANNEL_ARRIVALS)
+                .setSmallIcon(R.drawable.ic_launcher)
+                .setContentTitle("File received from PC")
+                .setContentText("$name · Tap to open or choose where to save")
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .build())
     }
 
     override fun onDestroy() {
@@ -183,8 +211,11 @@ class PocketDropReceiverService : Service() {
         const val CHANNEL_SERVICE = "pocketdrop_receiver"
         const val CHANNEL_ARRIVALS = "pocketdrop_arrivals"
         const val ACTION_RECEIVED = "com.raytek.pocketdrop.RECEIVED"
+        const val ACTION_REVIEW_FILE = "com.raytek.pocketdrop.REVIEW_FILE"
         const val EXTRA_TYPE = "type"
         const val EXTRA_VALUE = "value"
+        const val EXTRA_PATH = "path"
+        const val EXTRA_MIME = "mime"
         fun localAddress(): String {
             return try {
                 NetworkInterface.getNetworkInterfaces().toList()
