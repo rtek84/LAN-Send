@@ -44,6 +44,12 @@
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="3dp" android:text="Scan the QR code shown on your PC"
                     android:textColor="@color/pocket_muted" android:textSize="13sp" />
+                <TextView android:id="@+id/connectionStatus"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" android:background="@color/pocket_activity_surface"
+                    android:padding="10dp" android:text="Checking PC status…"
+                    android:textColor="@color/pocket_muted" android:textSize="12sp"
+                    android:textStyle="bold" />
                 <Button android:id="@+id/scanQr" android:layout_width="match_parent" android:layout_height="52dp"
                     android:layout_marginTop="15dp" android:text="Scan QR code" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
