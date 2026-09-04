@@ -5,12 +5,15 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
+import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.os.Environment
 import android.Manifest
 import android.content.pm.PackageManager
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
@@ -18,7 +21,10 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.io.BufferedInputStream
@@ -26,6 +32,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -40,6 +47,31 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var receivedFromPc: TextView
     private lateinit var transferActivity: TextView
+    private var pendingSavePath: String? = null
+    private var pendingSaveName: String? = null
+    private val saveAsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val destination = result.data?.data
+        val source = pendingSavePath?.let(::File)
+        val name = pendingSaveName.orEmpty()
+        if (result.resultCode == Activity.RESULT_OK && destination != null && source?.exists() == true) {
+            executor.execute {
+                try {
+                    source.inputStream().use { input ->
+                        contentResolver.openOutputStream(destination, "w").use { output ->
+                            requireNotNull(output) { "Cannot open selected location" }
+                            input.copyTo(output)
+                        }
+                    }
+                    source.delete()
+                    runOnUiThread { showStatus("Saved $name ✓") }
+                } catch (e: Exception) {
+                    runOnUiThread { showStatus("Could not save file: ${e.message}", true) }
+                }
+            }
+        }
+        pendingSavePath = null
+        pendingSaveName = null
+    }
     private var receiverRegistered = false
     private val arrivalReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -52,9 +84,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 "file" -> {
                     val name = intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty()
-                    receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
+                    receivedFromPc.text = "Latest file: $name\nReady to open or save"
                     refreshTransferActivity()
                     showStatus("File received from PC")
+                    reviewIncomingFile(
+                        name,
+                        intent.getStringExtra(PocketDropReceiverService.EXTRA_PATH).orEmpty(),
+                        intent.getStringExtra(PocketDropReceiverService.EXTRA_MIME) ?: "application/octet-stream"
+                    )
                 }
             }
         }
@@ -116,6 +153,7 @@ class MainActivity : AppCompatActivity() {
         }
         sendFilesButton.setOnClickListener { sendSelectedFiles() }
         handleShareIntent(intent)
+        handleReviewIntent(intent)
     }
 
     override fun onStart() {
@@ -151,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             receivedFromPc.text = "Latest arrival: message from PC"
         } else if (fileTime > 0L) {
             val name = arrivals.getString("latest_file", "").orEmpty()
-            receivedFromPc.text = "Latest file: $name\nSaved in Downloads/PocketDrop"
+            receivedFromPc.text = "Latest file: $name\nReady to open or save"
         }
     }
 
@@ -163,6 +201,84 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+        handleReviewIntent(intent)
+    }
+
+    private fun handleReviewIntent(intent: Intent) {
+        if (intent.action != PocketDropReceiverService.ACTION_REVIEW_FILE) return
+        val name = intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty()
+        val path = intent.getStringExtra(PocketDropReceiverService.EXTRA_PATH).orEmpty()
+        val mime = intent.getStringExtra(PocketDropReceiverService.EXTRA_MIME) ?: "application/octet-stream"
+        intent.action = null
+        reviewIncomingFile(name, path, mime)
+    }
+
+    private fun reviewIncomingFile(name: String, path: String, mime: String) {
+        val file = File(path)
+        if (!file.exists()) return showStatus("The temporary file is no longer available", true)
+        AlertDialog.Builder(this)
+            .setTitle("File received from PC")
+            .setMessage(name)
+            .setItems(arrayOf("Open", "Save to Downloads/PocketDrop", "Choose location…")) { _, which ->
+                when (which) {
+                    0 -> openIncomingFile(file, mime)
+                    1 -> saveToDownloads(file, name, mime)
+                    2 -> chooseSaveLocation(file, name, mime)
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun openIncomingFile(file: File, mime: String) {
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        } catch (_: Exception) {
+            showStatus("No app on this phone can open this file", true)
+        }
+    }
+
+    private fun saveToDownloads(file: File, name: String, mime: String) {
+        setBusy(true, "Saving $name…")
+        executor.execute {
+            try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PocketDrop")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Cannot create download")
+                file.inputStream().use { input ->
+                    contentResolver.openOutputStream(uri).use { output ->
+                        requireNotNull(output) { "Cannot write download" }
+                        input.copyTo(output)
+                    }
+                }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+                file.delete()
+                runOnUiThread { setBusy(false, "Saved to Downloads/PocketDrop ✓") }
+            } catch (e: Exception) {
+                runOnUiThread { setBusy(false, "Could not save file: ${e.message}", true) }
+            }
+        }
+    }
+
+    private fun chooseSaveLocation(file: File, name: String, mime: String) {
+        pendingSavePath = file.absolutePath
+        pendingSaveName = name
+        saveAsLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mime
+            putExtra(Intent.EXTRA_TITLE, name)
+        })
     }
 
     @Deprecated("Deprecated in Java")
