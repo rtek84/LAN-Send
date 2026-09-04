@@ -79,6 +79,8 @@ class PocketDropReceiverService : Service() {
                         val text = readBody(input, length).toString(StandardCharsets.UTF_8)
                         getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
                             .putString("latest", text).putLong("latest_time", System.currentTimeMillis()).apply()
+                        sendBroadcast(Intent(ACTION_RECEIVED).setPackage(packageName)
+                            .putExtra(EXTRA_TYPE, "message").putExtra(EXTRA_VALUE, text))
                         notifyArrival("Message from PC", text.take(120))
                         respond(client, 200, "OK")
                     }
@@ -86,6 +88,10 @@ class PocketDropReceiverService : Service() {
                         val encoded = headers["x-file-name"] ?: "PocketDrop_file"
                         val name = URLDecoder.decode(encoded, "UTF-8").substringAfterLast('/').substringAfterLast('\\')
                         saveDownload(name, headers["content-type"] ?: "application/octet-stream", input, length)
+                        getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
+                            .putString("latest_file", name).putLong("latest_file_time", System.currentTimeMillis()).apply()
+                        sendBroadcast(Intent(ACTION_RECEIVED).setPackage(packageName)
+                            .putExtra(EXTRA_TYPE, "file").putExtra(EXTRA_VALUE, name))
                         notifyArrival("File received", name)
                         respond(client, 200, "OK")
                     }
@@ -174,6 +180,9 @@ class PocketDropReceiverService : Service() {
         const val PORT = 8735
         const val CHANNEL_SERVICE = "pocketdrop_receiver"
         const val CHANNEL_ARRIVALS = "pocketdrop_arrivals"
+        const val ACTION_RECEIVED = "com.raytek.pocketdrop.RECEIVED"
+        const val EXTRA_TYPE = "type"
+        const val EXTRA_VALUE = "value"
         fun localAddress(): String {
             return try {
                 NetworkInterface.getNetworkInterfaces().toList()
