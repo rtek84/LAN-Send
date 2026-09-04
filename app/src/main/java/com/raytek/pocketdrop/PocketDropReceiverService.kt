@@ -83,6 +83,10 @@ class PocketDropReceiverService : Service() {
                 }
                 val expected = getSharedPreferences("pocketdrop", MODE_PRIVATE).getString("phone_token", "")
                 if (headers["x-pocketdrop-token"] != expected) return respond(client, 401, "Private key rejected")
+                val expectedPc = getSharedPreferences("pocketdrop", MODE_PRIVATE).getString("paired_pc_id", "").orEmpty()
+                if (expectedPc.isNotBlank() && headers["x-pocketdrop-device"] != expectedPc) {
+                    return respond(client, 403, "Paired device required")
+                }
                 val length = headers["content-length"]?.toLongOrNull() ?: 0L
                 when (request[1]) {
                     "/ping" -> respond(client, 200, "LAN Send phone is ready")
