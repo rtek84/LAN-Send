@@ -29,4 +29,10 @@ object TransferHistory {
         if (entries.length() == 0) return "No transfers yet"
         return (0 until entries.length()).joinToString("\n") { entries.optString(it) }
     }
+
+    @Synchronized
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY).apply()
+    }
 }
