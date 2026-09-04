@@ -405,18 +405,38 @@ function Save-InboxSetting([string]$Path) {
 function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="LAN Send settings" Width="570" Height="265" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="290" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Foreground" Value="#3048C9"/><Setter Property="Background" Value="#EEF1FF"/>
+      <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="14,8"/>
+      <Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="Button">
+          <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.86"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.70"/></Trigger>
+          </ControlTemplate.Triggers>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <TextBlock Text="PC inbox folder" FontSize="21" FontWeight="SemiBold" Foreground="#182033"/>
     <TextBlock Grid.Row="1" Margin="0,7,0,14" Text="Files received from your phone are saved here." Foreground="#758096" FontSize="13"/>
     <TextBox Name="InboxPathBox" Grid.Row="2" Height="42" IsReadOnly="True" VerticalContentAlignment="Center"
              Padding="10,0" BorderBrush="#DCE2EE" Background="White" Foreground="#364158"/>
-    <StackPanel Grid.Row="3" Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+    <TextBlock Name="SavedText" Grid.Row="3" Margin="2,10,0,0" Text="" Foreground="#16834B" FontSize="12" FontWeight="SemiBold"/>
+    <StackPanel Grid.Row="4" Margin="0,13,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
       <Button Name="RestoreButton" Content="Restore default" Width="120" Height="38" Margin="0,0,8,0"/>
       <Button Name="OpenButton" Content="Open folder" Width="105" Height="38" Margin="0,0,8,0"/>
-      <Button Name="ChooseButton" Content="Choose folder" Width="115" Height="38" Background="#4664F5" Foreground="White"/>
+      <Button Name="ChooseButton" Content="Change folder" Width="115" Height="38" Background="#4664F5" Foreground="White"/>
     </StackPanel>
   </Grid>
 </Window>
@@ -425,6 +445,7 @@ function Show-SettingsWindow {
     $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
     $settingsWindow.Owner = $window
     $pathBox = $settingsWindow.FindName('InboxPathBox')
+    $savedText = $settingsWindow.FindName('SavedText')
     $pathBox.Text = $script:Inbox
 
     $settingsWindow.FindName('ChooseButton').add_Click({
@@ -442,6 +463,7 @@ function Show-SettingsWindow {
             $selectedFolder = Split-Path -Parent $picker.FileName
             Save-InboxSetting $selectedFolder
             $pathBox.Text = $script:Inbox
+            $savedText.Text = 'Folder updated'
         }
     })
     $settingsWindow.FindName('OpenButton').add_Click({ Start-Process explorer.exe $script:Inbox })
@@ -449,6 +471,7 @@ function Show-SettingsWindow {
         $defaultInbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LAN Send Inbox'
         Save-InboxSetting $defaultInbox
         $pathBox.Text = $script:Inbox
+        $savedText.Text = 'Default folder restored'
     })
     [void]$settingsWindow.ShowDialog()
 }
