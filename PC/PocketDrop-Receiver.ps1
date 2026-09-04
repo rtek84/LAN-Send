@@ -419,16 +419,21 @@ function Show-SettingsWindow {
     $pathBox.Text = $script:Inbox
 
     $settingsWindow.FindName('ChooseButton').add_Click({
-        $picker = New-Object System.Windows.Forms.FolderBrowserDialog
-        $picker.Description = 'Choose where LAN Send should save files received from your phone'
-        $picker.SelectedPath = $script:Inbox
-        $picker.ShowNewFolderButton = $true
-        $picker.AutoUpgradeEnabled = $true
-        if ($picker.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            Save-InboxSetting $picker.SelectedPath
+        # OpenFileDialog uses the modern Explorer picker. With validation disabled,
+        # its placeholder filename lets the user select the folder currently open.
+        $picker = New-Object Microsoft.Win32.OpenFileDialog
+        $picker.Title = 'Choose the LAN Send inbox folder'
+        $picker.InitialDirectory = $script:Inbox
+        $picker.CheckFileExists = $false
+        $picker.CheckPathExists = $true
+        $picker.ValidateNames = $false
+        $picker.FileName = 'Select this folder'
+        $picker.Filter = 'Folder|*.folder'
+        if ($picker.ShowDialog($settingsWindow)) {
+            $selectedFolder = Split-Path -Parent $picker.FileName
+            Save-InboxSetting $selectedFolder
             $pathBox.Text = $script:Inbox
         }
-        $picker.Dispose()
     })
     $settingsWindow.FindName('OpenButton').add_Click({ Start-Process explorer.exe $script:Inbox })
     $settingsWindow.FindName('RestoreButton').add_Click({
