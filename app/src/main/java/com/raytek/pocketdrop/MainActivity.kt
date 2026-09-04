@@ -154,6 +154,7 @@ class MainActivity : AppCompatActivity() {
         transferActivity = findViewById(R.id.transferActivity)
         connectionStatus = findViewById(R.id.connectionStatus)
         findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
+        findViewById<View>(R.id.clearHistory).setOnClickListener { confirmClearHistory() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -202,6 +203,19 @@ class MainActivity : AppCompatActivity() {
         refreshTransferActivity()
         heartbeatHandler.removeCallbacks(heartbeat)
         heartbeatHandler.post(heartbeat)
+    }
+
+    private fun confirmClearHistory() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear transfer activity?")
+            .setMessage("This removes the activity history only. Your transferred files will not be deleted.")
+            .setNegativeButton("No", null)
+            .setPositiveButton("Yes") { _, _ ->
+                TransferHistory.clear(this)
+                refreshTransferActivity()
+                showStatus("Transfer activity cleared")
+            }
+            .show()
     }
 
     override fun onStop() {
