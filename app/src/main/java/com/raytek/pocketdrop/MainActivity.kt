@@ -668,5 +668,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        heartbeatHandler.removeCallbacksAndMessages(null)
+        executor.shutdownNow()
+        super.onDestroy()
+    }
+
     companion object { private const val PICK_FILES = 41 }
 }
