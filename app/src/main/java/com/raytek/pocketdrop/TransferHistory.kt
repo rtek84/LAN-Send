@@ -23,11 +23,17 @@ object TransferHistory {
     }
 
     @Synchronized
-    fun displayText(context: Context): String {
+    fun displayText(context: Context, limit: Int = MAX_ENTRIES): String {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val entries = try { JSONArray(prefs.getString(KEY, "[]")) } catch (_: Exception) { JSONArray() }
         if (entries.length() == 0) return "No transfers yet"
-        return (0 until entries.length()).joinToString("\n") { entries.optString(it) }
+        return (0 until minOf(entries.length(), limit)).joinToString("\n") { entries.optString(it) }
+    }
+
+    @Synchronized
+    fun count(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return try { JSONArray(prefs.getString(KEY, "[]")).length() } catch (_: Exception) { 0 }
     }
 
     @Synchronized
