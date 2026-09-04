@@ -40,6 +40,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -129,11 +130,13 @@ class MainActivity : AppCompatActivity() {
     }
     private val qrScanner = registerForActivityResult(ScanContract()) { result ->
         val value = result.contents ?: return@registerForActivityResult
-        val parts = value.split('|', limit = 3)
-        if (parts.size == 3 && parts[0] == "pocketdrop") {
+        val parts = value.split('|')
+        if (parts.size >= 3 && parts[0] == "pocketdrop") {
             serverAddress.setText(parts[1])
             privateKey.setText(parts[2])
-            saveConnection()
+            getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
+                .putString("paired_pc_id", parts.getOrNull(3).orEmpty()).apply()
+            saveConnection(true)
             startPhoneReceiverAndRegister()
             showStatus("PC connected ✓")
         } else {
@@ -488,6 +491,13 @@ class MainActivity : AppCompatActivity() {
                 textSize = 15f
                 setTextColor(getColor(R.color.pocket_text_soft))
             })
+            addView(Button(this@MainActivity, null, android.R.attr.borderlessButtonStyle).apply {
+                text = "Forget paired PC"
+                isAllCaps = false
+                setTextColor(getColor(android.R.color.holo_red_dark))
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setOnClickListener { confirmForgetPc() }
+            })
         }
         AlertDialog.Builder(this)
             .setTitle("Phone storage")
@@ -499,6 +509,28 @@ class MainActivity : AppCompatActivity() {
                 showStatus("Default restored: Downloads/LAN Send")
             }
             .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun confirmForgetPc() {
+        AlertDialog.Builder(this)
+            .setTitle("Forget paired PC?")
+            .setMessage("This revokes the current connection. You will need to scan the PC QR code again. Transferred files will not be deleted.")
+            .setNegativeButton("No", null)
+            .setPositiveButton("Yes") { _, _ ->
+                getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
+                    .remove("server")
+                    .remove("token")
+                    .remove("paired_pc_id")
+                    .putString("phone_token", UUID.randomUUID().toString().replace("-", ""))
+                    .apply()
+                serverAddress.text.clear()
+                privateKey.text.clear()
+                stopService(Intent(this, PocketDropReceiverService::class.java))
+                connectionStatus.text = "● PC not configured"
+                connectionStatus.setTextColor(getColor(R.color.pocket_muted))
+                showStatus("Paired PC forgotten")
+            }
             .show()
     }
 
@@ -536,11 +568,16 @@ class MainActivity : AppCompatActivity() {
         if (selectedUris.isNotEmpty() && connectionIsReady()) sendSelectedFiles()
     }
 
-    private fun saveConnection() {
-        getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
+    private fun saveConnection(preservePairedIdentity: Boolean = false) {
+        val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+        val newServer = normalizedServer()
+        val newToken = privateKey.text.toString().trim()
+        val connectionChanged = prefs.getString("server", "") != newServer || prefs.getString("token", "") != newToken
+        val edit = prefs.edit()
             .putString("server", normalizedServer())
-            .putString("token", privateKey.text.toString().trim())
-            .apply()
+            .putString("token", newToken)
+        if (connectionChanged && !preservePairedIdentity) edit.remove("paired_pc_id")
+        edit.apply()
         serverAddress.setText(normalizedServer())
     }
 
@@ -557,7 +594,7 @@ class MainActivity : AppCompatActivity() {
                 val phoneToken = prefs.getString("phone_token", "") ?: ""
                 val phoneAddress = PocketDropReceiverService.localAddress()
                 if (phoneToken.isNotBlank() && phoneAddress.isNotBlank()) {
-                    postBytes("/api/register", "text/plain; charset=utf-8", "$phoneAddress|$phoneToken".toByteArray(StandardCharsets.UTF_8))
+                    postBytes("/api/register", "text/plain; charset=utf-8", "$phoneAddress|$phoneToken|${phoneDeviceId()}".toByteArray(StandardCharsets.UTF_8))
                     runOnUiThread { showStatus("Two-way connection ready ✓") }
                 }
             } catch (_: Exception) {
@@ -738,7 +775,16 @@ class MainActivity : AppCompatActivity() {
             connectTimeout = 10_000
             readTimeout = 30_000
             setRequestProperty("X-PocketDrop-Token", privateKey.text.toString().trim())
+            setRequestProperty("X-PocketDrop-Device", phoneDeviceId())
         }
+    }
+
+    private fun phoneDeviceId(): String {
+        val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+        prefs.getString("phone_device_id", null)?.takeIf { it.isNotBlank() }?.let { return it }
+        val created = UUID.randomUUID().toString().replace("-", "")
+        prefs.edit().putString("phone_device_id", created).apply()
+        return created
     }
 
     private fun verifyResponse(connection: HttpURLConnection) {
