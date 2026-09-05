@@ -75,7 +75,7 @@ Initialize-NetworkAccess
 if (Test-Path $ConfigPath) {
     $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 } else {
-    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = ''; PcDeviceId = ([guid]::NewGuid().ToString('N')); PairedPhoneId = ''; AutoReceiveFiles = $true }
+    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = ''; PcDeviceId = ([guid]::NewGuid().ToString('N')); PairedPhoneId = ''; AutoReceiveFiles = $true; ReceiveMode = 'auto'; AutoOpenInbox = $false }
     $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 }
 if (-not $Config.PSObject.Properties['PhoneAddress']) { $Config | Add-Member NoteProperty PhoneAddress '' }
@@ -83,6 +83,10 @@ if (-not $Config.PSObject.Properties['PhoneToken']) { $Config | Add-Member NoteP
 if (-not $Config.PSObject.Properties['PcDeviceId']) { $Config | Add-Member NoteProperty PcDeviceId ([guid]::NewGuid().ToString('N')) }
 if (-not $Config.PSObject.Properties['PairedPhoneId']) { $Config | Add-Member NoteProperty PairedPhoneId '' }
 if (-not $Config.PSObject.Properties['AutoReceiveFiles']) { $Config | Add-Member NoteProperty AutoReceiveFiles $true }
+if (-not $Config.PSObject.Properties['ReceiveMode']) {
+    $Config | Add-Member NoteProperty ReceiveMode $(if ([bool]$Config.AutoReceiveFiles) { 'auto' } else { 'ask' })
+}
+if (-not $Config.PSObject.Properties['AutoOpenInbox']) { $Config | Add-Member NoteProperty AutoOpenInbox $false }
 $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 $script:Token = [string]$Config.Token
 $Inbox = [string]$Config.Inbox
@@ -542,7 +546,7 @@ function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LAN Send settings" Width="570" Height="555" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="610" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
     <Style TargetType="Button">
@@ -564,7 +568,7 @@ function Show-SettingsWindow {
     </Style>
   </Window.Resources>
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <TextBlock Text="PC inbox folder" FontSize="21" FontWeight="SemiBold" Foreground="#182033"/>
     <TextBlock Grid.Row="1" Margin="0,7,0,14" Text="Files received from your phone are saved here." Foreground="#758096" FontSize="13"/>
     <TextBox Name="InboxPathBox" Grid.Row="2" Height="42" IsReadOnly="True" VerticalContentAlignment="Center"
@@ -579,13 +583,18 @@ function Show-SettingsWindow {
     <TextBlock Grid.Row="6" Text="Receiving" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
     <TextBlock Grid.Row="7" Margin="0,5,0,0" Text="Choose whether your paired phone may send files directly to this inbox."
                TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
-    <CheckBox Name="AutoReceiveBox" Grid.Row="8" Margin="0,12,0,0" Content="Automatically receive files from paired phone"
+    <ComboBox Name="ReceiveModeBox" Grid.Row="8" Margin="0,12,0,0" Height="38" Padding="9,5" Background="White" BorderBrush="#DCE2EE">
+      <ComboBoxItem Content="Ask before receiving each file" Tag="ask"/>
+      <ComboBoxItem Content="Automatically receive from paired phone" Tag="auto"/>
+      <ComboBoxItem Content="Do not receive files" Tag="blocked"/>
+    </ComboBox>
+    <CheckBox Name="AutoOpenInboxBox" Grid.Row="9" Margin="0,12,0,0" Content="Open inbox after a file is received"
               Foreground="#364158" FontSize="13"/>
-    <Border Grid.Row="9" Height="1" Background="#DCE2EE" Margin="0,18,0,16"/>
-    <TextBlock Grid.Row="10" Text="Security" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
-    <TextBlock Grid.Row="11" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
+    <Border Grid.Row="10" Height="1" Background="#DCE2EE" Margin="0,18,0,16"/>
+    <TextBlock Grid.Row="11" Text="Security" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+    <TextBlock Grid.Row="12" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
                TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
-    <StackPanel Grid.Row="12" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+    <StackPanel Grid.Row="13" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
       <Button Name="ForgetPhoneButton" Content="Forget paired phone" Width="165" Height="38" Margin="0,0,8,0" Foreground="#B42318" Background="#FFF0EE"/>
       <Button Name="RegenerateKeyButton" Content="Regenerate private key" Width="165" Height="38" Foreground="White" Background="#4664F5"/>
     </StackPanel>
@@ -598,12 +607,20 @@ function Show-SettingsWindow {
     $pathBox = $settingsWindow.FindName('InboxPathBox')
     $savedText = $settingsWindow.FindName('SavedText')
     $pathBox.Text = $script:Inbox
-    $autoReceiveBox = $settingsWindow.FindName('AutoReceiveBox')
-    $autoReceiveBox.IsChecked = [bool]$Config.AutoReceiveFiles
-    $autoReceiveBox.add_Click({
-        $Config.AutoReceiveFiles = [bool]$autoReceiveBox.IsChecked
+    $receiveModeBox = $settingsWindow.FindName('ReceiveModeBox')
+    $receiveModeBox.SelectedIndex = switch ([string]$Config.ReceiveMode) { 'ask' { 0 } 'blocked' { 2 } default { 1 } }
+    $receiveModeBox.add_SelectionChanged({
+        $Config.ReceiveMode = [string]$receiveModeBox.SelectedItem.Tag
+        $Config.AutoReceiveFiles = $Config.ReceiveMode -eq 'auto'
         $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
-        $savedText.Text = if ($Config.AutoReceiveFiles) { 'Automatic file receiving enabled' } else { 'Automatic file receiving disabled' }
+        $savedText.Text = 'Receiving preference updated'
+    })
+    $autoOpenInboxBox = $settingsWindow.FindName('AutoOpenInboxBox')
+    $autoOpenInboxBox.IsChecked = [bool]$Config.AutoOpenInbox
+    $autoOpenInboxBox.add_Click({
+        $Config.AutoOpenInbox = [bool]$autoOpenInboxBox.IsChecked
+        $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+        $savedText.Text = 'Inbox preference updated'
     })
 
     $settingsWindow.FindName('ChooseButton').add_Click({
@@ -667,18 +684,14 @@ function Send-Response($context, [int]$code, [string]$text) {
     $context.Response.Close()
 }
 
-function Offer-EnableAutoReceive([string]$FileName) {
+function Confirm-FileReceive([string]$FileName) {
     $answer = [System.Windows.MessageBox]::Show(
-        "Your paired phone tried to send '$FileName', but automatic receiving is turned off.`n`nTurn it on now? The phone will need to send the file again.",
-        'Enable automatic receiving?',
+        "Your paired phone wants to send '$FileName'.`n`nReceive this file?",
+        'Incoming file',
         [System.Windows.MessageBoxButton]::YesNo,
         [System.Windows.MessageBoxImage]::Question
     )
-    if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
-        $Config.AutoReceiveFiles = $true
-        $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
-        $window.FindName('StatusText').Text = 'Automatic receiving enabled - send the file again'
-    }
+    return $answer -eq [System.Windows.MessageBoxResult]::Yes
 }
 
 function Receive-Request($context) {
@@ -700,11 +713,18 @@ function Receive-Request($context) {
             $encodedName = $context.Request.Headers['X-File-Name']
             $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'this file' }
             $name = [IO.Path]::GetFileName($name)
-            if (-not [bool]$Config.AutoReceiveFiles) {
-                Send-Response $context 403 'Automatic file receiving is disabled on the PC.'
-                Offer-EnableAutoReceive $name
-            } else {
-                Send-Response $context 200 'Ready'
+            switch ([string]$Config.ReceiveMode) {
+                'blocked' { Send-Response $context 403 'File receiving is disabled on the PC.' }
+                'ask' {
+                    if (Confirm-FileReceive $name) {
+                        $script:ApprovedFileName = $name
+                        $script:ApprovedFileUntil = (Get-Date).AddMinutes(2)
+                        Send-Response $context 200 'Ready'
+                    } else {
+                        Send-Response $context 403 'File was declined on the PC.'
+                    }
+                }
+                default { Send-Response $context 200 'Ready' }
             }
             return
         }
@@ -741,10 +761,15 @@ function Receive-Request($context) {
                 $encodedName = $context.Request.Headers['X-File-Name']
                 $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'LANSend_file' }
                 $name = [IO.Path]::GetFileName($name)
-                if (-not [bool]$Config.AutoReceiveFiles) {
-                    Send-Response $context 403 'Automatic file receiving is disabled on the PC.'
-                    Offer-EnableAutoReceive $name
-                    return
+                switch ([string]$Config.ReceiveMode) {
+                    'blocked' { Send-Response $context 403 'File receiving is disabled on the PC.'; return }
+                    'ask' {
+                        $approved = $script:ApprovedFileName -eq $name -and
+                            $script:ApprovedFileUntil -and (Get-Date) -le $script:ApprovedFileUntil
+                        $script:ApprovedFileName = ''
+                        $script:ApprovedFileUntil = $null
+                        if (-not $approved) { Send-Response $context 403 'Approve this file on the PC first.'; return }
+                    }
                 }
                 foreach ($char in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$char, '_') }
                 $target = Join-Path $Inbox $name
@@ -760,6 +785,7 @@ function Receive-Request($context) {
                 Add-History "File: $([IO.Path]::GetFileName($target))" 'received_file' $target
                 Show-Arrival 'LAN Send received - click to open' ([IO.Path]::GetFileName($target)) $target
                 Send-Response $context 200 'OK'
+                if ([bool]$Config.AutoOpenInbox) { Start-Process explorer.exe $Inbox }
             }
             default { Send-Response $context 404 'Unknown LAN Send endpoint' }
         }
