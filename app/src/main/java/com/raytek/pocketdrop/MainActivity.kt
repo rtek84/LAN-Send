@@ -563,7 +563,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun numberedName(name: String, number: Int): String {
         val (base, extension) = splitFileName(name)
-        return "$base ($number)$extension"
+        val cleanBase = base.replace(Regex(" \\(\\d+\\)$"), "")
+        return "$cleanBase ($number)$extension"
+    }
+
+    private fun nextCopyNumber(name: String): Int {
+        val (base, _) = splitFileName(name)
+        return Regex(" \\((\\d+)\\)$").find(base)?.groupValues?.get(1)?.toIntOrNull()?.plus(1) ?: 1
     }
 
     private fun uniqueDownloadName(name: String): String {
@@ -581,7 +587,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         var candidate = name
-        var copyNumber = 1
+        var copyNumber = nextCopyNumber(name)
         while (exists(candidate)) {
             candidate = numberedName(name, copyNumber++)
         }
@@ -605,7 +611,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         var candidate = name
-        var copyNumber = 1
+        var copyNumber = nextCopyNumber(name)
         while (existingNames.contains(candidate)) {
             candidate = numberedName(name, copyNumber++)
         }
