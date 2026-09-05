@@ -635,6 +635,9 @@ function Receive-Request($context) {
         if ($Config.PairedPhoneId -and $requestDeviceId -ne [string]$Config.PairedPhoneId) {
             Send-Response $context 403 'Paired device required'; return
         }
+        if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/api/identity') {
+            Send-Response $context 200 ([string]$Config.PcDeviceId); return
+        }
         if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/api/can-receive-file') {
             $encodedName = $context.Request.Headers['X-File-Name']
             $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'this file' }
