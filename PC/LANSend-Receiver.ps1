@@ -3,6 +3,18 @@ param([switch]$Startup)
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms, System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Give the PowerShell-hosted WPF window its own Windows taskbar identity.
+# Without this, Windows may group it under powershell.exe and show PowerShell's icon.
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+
+public static class LanSendTaskbarIdentity {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+}
+'@
+[void][LanSendTaskbarIdentity]::SetCurrentProcessExplicitAppUserModelID('LANSend.PC.3')
+
 $Port = 8734
 $AppFolder = Join-Path $env:LOCALAPPDATA 'PocketDrop'
 $LogoPath = Join-Path $PSScriptRoot 'LAN-Send-Logo.png'
