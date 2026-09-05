@@ -84,7 +84,7 @@ Section "LAN Send PC (required)" SecCore
   Pop $0
   nsExec::ExecToLog '$\"$SYSDIR\netsh.exe$\" advfirewall firewall delete rule name=$\"LAN Send Receiver$\"'
   Pop $0
-  nsExec::ExecToLog '$\"$SYSDIR\netsh.exe$\" advfirewall firewall add rule name=$\"LAN Send Receiver$\" dir=in action=allow protocol=TCP localport=8734 profile=private program=$\"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe$\"'
+  nsExec::ExecToLog '$\"$SYSDIR\netsh.exe$\" advfirewall firewall add rule name=$\"LAN Send Receiver$\" dir=in action=allow protocol=TCP localport=8734 profile=private'
   Pop $0
 SectionEnd
 
