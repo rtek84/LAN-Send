@@ -42,6 +42,7 @@ import java.io.BufferedInputStream
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.URL
+import java.net.URLConnection
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.io.File
@@ -172,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
         findViewById<View>(R.id.clearHistory).setOnClickListener { confirmClearHistory() }
         showAllHistory.setOnClickListener { showFullTransferHistory() }
+        transferActivity.setOnClickListener { showFullTransferHistory() }
 
         val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         serverAddress.setText(prefs.getString("server", ""))
@@ -238,15 +240,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFullTransferHistory() {
         val padding = (16 * resources.displayMetrics.density).toInt()
-        val fullHistory = TextView(this).apply {
-            text = TransferHistory.displayText(this@MainActivity)
-            setTextColor(getColor(R.color.pocket_text_soft))
-            textSize = 13f
-            setLineSpacing(0f, 1.35f)
-            setPadding(padding, padding, padding, padding)
+        lateinit var dialog: AlertDialog
+        val entries = TransferHistory.entries(this)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, padding / 2, padding, padding / 2)
         }
-        val scroll = ScrollView(this).apply { addView(fullHistory) }
-        val dialog = AlertDialog.Builder(this)
+        if (entries.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "No transfers yet"
+                setPadding(0, padding, 0, padding)
+            })
+        }
+        entries.forEachIndexed { index, entry ->
+            list.addView(TextView(this).apply {
+                text = entry.display
+                setTextColor(getColor(R.color.pocket_text_soft))
+                textSize = 13f
+                setPadding(0, padding, 0, padding)
+                isClickable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+                setOnClickListener {
+                    showHistoryActions(entry, index) {
+                        dialog.dismiss()
+                        showFullTransferHistory()
+                    }
+                }
+            })
+        }
+        val scroll = ScrollView(this).apply { addView(list) }
+        dialog = AlertDialog.Builder(this)
             .setTitle("Transfer activity")
             .setView(scroll)
             .setNeutralButton("Clear", null)
@@ -268,6 +291,67 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+    }
+
+    private fun showHistoryActions(entry: TransferHistoryEntry, index: Int, onHistoryChanged: () -> Unit) {
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (entry.kind.endsWith("_file") && entry.value.isNotBlank()) {
+            actions += "Open" to { openHistoryFile(entry.value) }
+            actions += "Send again" to { sendHistoryFile(entry.value) }
+        }
+        if (entry.kind.endsWith("_message") && entry.value.isNotBlank()) {
+            actions += "Copy message" to {
+                getSystemService(ClipboardManager::class.java)
+                    .setPrimaryClip(ClipData.newPlainText("LAN Send message", entry.value))
+                showStatus("Message copied ✓")
+            }
+        }
+        actions += "Remove from history" to {
+            TransferHistory.removeAt(this, index)
+            refreshTransferActivity()
+            showStatus("History entry removed")
+            onHistoryChanged()
+        }
+        AlertDialog.Builder(this)
+            .setTitle(entry.display)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun historyUri(value: String): Uri {
+        if (value.startsWith("content://")) return Uri.parse(value)
+        return FileProvider.getUriForFile(this, "$packageName.files", File(value))
+    }
+
+    private fun openHistoryFile(value: String) {
+        try {
+            val uri = historyUri(value)
+            val mime = contentResolver.getType(uri)
+                ?: URLConnection.guessContentTypeFromName(value) ?: "*/*"
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (_: Exception) { showStatus("This file is no longer available", true) }
+    }
+
+    private fun sendHistoryFile(value: String) {
+        val uri = try { historyUri(value) } catch (_: Exception) {
+            return showStatus("This file is no longer available", true)
+        }
+        if (!connectionIsReady()) return
+        setBusy(true, "Sending again…")
+        executor.execute {
+            try {
+                sendUri(uri)
+                runOnUiThread {
+                    TransferHistory.add(this, "Sent again: ${displayName(uri)}", "sent_file", uri.toString())
+                    refreshTransferActivity()
+                    setBusy(false, "File delivered again ✓")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { setBusy(false, friendlyError(e), true) }
+            }
+        }
     }
 
     override fun onStop() {
@@ -598,6 +682,13 @@ class MainActivity : AppCompatActivity() {
         data.clipData?.let { clip ->
             for (i in 0 until clip.itemCount) selectedUris.add(clip.getItemAt(i).uri)
         } ?: data.data?.let(selectedUris::add)
+        selectedUris.forEach { uri ->
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+                // Some providers grant access only for the current app session.
+            }
+        }
         updateSelectedFiles()
     }
 
@@ -783,7 +874,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 postBytes("/api/text", "text/plain; charset=utf-8", text.toByteArray(StandardCharsets.UTF_8))
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent message: ${text.replace("\n", " ").take(45)}")
+                    TransferHistory.add(this, "Sent message: ${text.replace("\n", " ").take(45)}", "sent_message", text)
                     refreshTransferActivity()
                     messageText.text.clear()
                     setBusy(false, "Message delivered ✓")
@@ -813,7 +904,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 postBytes("/api/text", "text/plain; charset=utf-8", text.toByteArray(StandardCharsets.UTF_8))
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent clipboard: ${text.replace("\n", " ").take(45)}")
+                    TransferHistory.add(this, "Sent clipboard: ${text.replace("\n", " ").take(45)}", "sent_message", text)
                     refreshTransferActivity()
                     setBusy(false, "Clipboard delivered ✓")
                 }
@@ -835,7 +926,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent clipboard image: $originalName")
+                    TransferHistory.add(this, "Sent clipboard image: $originalName", "sent_file", uri.toString())
                     refreshTransferActivity()
                     progress.progress = 100
                     setBusy(false, "Clipboard image delivered ✓")
@@ -873,7 +964,7 @@ class MainActivity : AppCompatActivity() {
                     if (itemSize > 0L) completedBytes += itemSize
                 }
                 runOnUiThread {
-                    items.forEach { TransferHistory.add(this, "Sent file: ${displayName(it)}") }
+                    items.forEach { TransferHistory.add(this, "Sent file: ${displayName(it)}", "sent_file", it.toString()) }
                     refreshTransferActivity()
                     selectedUris.clear()
                     updateSelectedFiles()
