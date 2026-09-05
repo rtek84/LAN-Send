@@ -775,6 +775,10 @@ function Receive-Request($context) {
                 $target = Join-Path $Inbox $name
                 $base = [IO.Path]::GetFileNameWithoutExtension($name); $ext = [IO.Path]::GetExtension($name)
                 $copyNumber = 1
+                if ($base -match '^(.*) \((\d+)\)$') {
+                    $base = $Matches[1]
+                    $copyNumber = [int]$Matches[2] + 1
+                }
                 while (Test-Path -LiteralPath $target) {
                     $target = Join-Path $Inbox "${base} ($copyNumber)${ext}"
                     $copyNumber++
