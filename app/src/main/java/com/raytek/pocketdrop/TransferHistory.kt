@@ -2,9 +2,12 @@ package com.raytek.pocketdrop
 
 import android.content.Context
 import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class TransferHistoryEntry(val display: String, val kind: String = "", val value: String = "")
 
 object TransferHistory {
     private const val PREFS = "pocketdrop_history"
@@ -12,33 +15,59 @@ object TransferHistory {
     private const val MAX_ENTRIES = 50
 
     @Synchronized
-    fun add(context: Context, description: String) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val existing = try { JSONArray(prefs.getString(KEY, "[]")) } catch (_: Exception) { JSONArray() }
+    fun add(context: Context, description: String, kind: String = "", value: String = "") {
+        val existing = raw(context)
         val updated = JSONArray()
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-        updated.put("$time  $description")
-        for (index in 0 until minOf(existing.length(), MAX_ENTRIES - 1)) updated.put(existing.optString(index))
-        prefs.edit().putString(KEY, updated.toString()).apply()
+        updated.put(JSONObject().apply {
+            put("display", "$time  $description")
+            put("kind", kind)
+            put("value", value)
+        })
+        for (index in 0 until minOf(existing.length(), MAX_ENTRIES - 1)) updated.put(existing.get(index))
+        save(context, updated)
     }
 
     @Synchronized
+    fun entries(context: Context): List<TransferHistoryEntry> {
+        val array = raw(context)
+        return (0 until array.length()).map { index ->
+            when (val item = array.opt(index)) {
+                is JSONObject -> TransferHistoryEntry(
+                    item.optString("display"), item.optString("kind"), item.optString("value")
+                )
+                else -> TransferHistoryEntry(item?.toString().orEmpty())
+            }
+        }
+    }
+
+    @Synchronized
+    fun removeAt(context: Context, removeIndex: Int) {
+        val existing = raw(context)
+        val updated = JSONArray()
+        for (index in 0 until existing.length()) if (index != removeIndex) updated.put(existing.get(index))
+        save(context, updated)
+    }
+
     fun displayText(context: Context, limit: Int = MAX_ENTRIES): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val entries = try { JSONArray(prefs.getString(KEY, "[]")) } catch (_: Exception) { JSONArray() }
-        if (entries.length() == 0) return "No transfers yet"
-        return (0 until minOf(entries.length(), limit)).joinToString("\n") { entries.optString(it) }
+        val entries = entries(context)
+        if (entries.isEmpty()) return "No transfers yet"
+        return entries.take(limit).joinToString("\n") { it.display }
     }
 
-    @Synchronized
-    fun count(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return try { JSONArray(prefs.getString(KEY, "[]")).length() } catch (_: Exception) { 0 }
-    }
+    fun count(context: Context): Int = raw(context).length()
 
     @Synchronized
     fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().remove(KEY).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
+    }
+
+    private fun raw(context: Context): JSONArray {
+        val value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "[]")
+        return try { JSONArray(value) } catch (_: Exception) { JSONArray() }
+    }
+
+    private fun save(context: Context, entries: JSONArray) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, entries.toString()).apply()
     }
 }
