@@ -96,6 +96,12 @@ class MainActivity : AppCompatActivity() {
         val source = pendingSavePath?.let(::File)
         val name = pendingSaveName.orEmpty()
         if (result.resultCode == Activity.RESULT_OK && destination != null && source?.exists() == true) {
+            try {
+                val flags = result.data?.flags?.and(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                ) ?: Intent.FLAG_GRANT_READ_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(destination, flags)
+            } catch (_: Exception) { }
             executor.execute {
                 try {
                     source.inputStream().use { input ->
@@ -104,6 +110,7 @@ class MainActivity : AppCompatActivity() {
                             input.copyTo(output)
                         }
                     }
+                    TransferHistory.replaceValue(this, source.absolutePath, destination.toString())
                     source.delete()
                     runOnUiThread { showStatus("Saved $name ✓") }
                 } catch (e: Exception) {
@@ -508,6 +515,7 @@ class MainActivity : AppCompatActivity() {
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 contentResolver.update(uri, values, null, null)
+                TransferHistory.replaceValue(this, file.absolutePath, uri.toString())
                 file.delete()
                 runOnUiThread { setBusy(false, "Saved $savedName to Downloads/LAN Send ✓") }
             } catch (e: Exception) {
@@ -539,6 +547,7 @@ class MainActivity : AppCompatActivity() {
                         input.copyTo(output)
                     }
                 }
+                TransferHistory.replaceValue(this, file.absolutePath, destination.toString())
                 file.delete()
                 runOnUiThread { setBusy(false, "Saved $savedName to ${defaultFolderLabel()} ✓") }
             } catch (e: Exception) {
