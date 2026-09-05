@@ -193,7 +193,7 @@ class MainActivity : AppCompatActivity() {
             showStatus("PC connection saved")
         }
         findViewById<Button>(R.id.sendMessage).setOnClickListener { sendMessage() }
-        findViewById<Button>(R.id.sendClipboard).setOnClickListener { sendClipboardText() }
+        findViewById<Button>(R.id.sendClipboard).setOnClickListener { sendClipboard() }
         findViewById<Button>(R.id.chooseFiles).setOnClickListener {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "*/*"
@@ -794,9 +794,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun sendClipboardText() {
+    private fun sendClipboard() {
         val clipboard = getSystemService(ClipboardManager::class.java)
         val clip = clipboard.primaryClip
+        val imageUri = clip?.takeIf {
+            it.itemCount > 0 && it.description.hasMimeType("image/*")
+        }?.getItemAt(0)?.uri
+        if (imageUri != null) {
+            sendClipboardImage(imageUri)
+            return
+        }
         val text = clip?.takeIf { it.itemCount > 0 }
             ?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
         if (text.isBlank()) return showStatus("Clipboard does not contain text or a link", true)
@@ -809,6 +816,29 @@ class MainActivity : AppCompatActivity() {
                     TransferHistory.add(this, "Sent clipboard: ${text.replace("\n", " ").take(45)}")
                     refreshTransferActivity()
                     setBusy(false, "Clipboard delivered ✓")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { setBusy(false, friendlyError(e), true) }
+            }
+        }
+    }
+
+    private fun sendClipboardImage(uri: Uri) {
+        if (!connectionIsReady()) return
+        val originalName = displayName(uri)
+        setBusy(true, "Sending clipboard image…")
+        executor.execute {
+            try {
+                sendUri(uri) { sent ->
+                    runOnUiThread {
+                        statusText.text = "Sending clipboard image — ${readableBytes(sent)}"
+                    }
+                }
+                runOnUiThread {
+                    TransferHistory.add(this, "Sent clipboard image: $originalName")
+                    refreshTransferActivity()
+                    progress.progress = 100
+                    setBusy(false, "Clipboard image delivered ✓")
                 }
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, friendlyError(e), true) }
