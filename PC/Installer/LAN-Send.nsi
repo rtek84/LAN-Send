@@ -27,7 +27,7 @@ VIAddVersionKey "FileDescription" "LAN Send installer"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
 VIAddVersionKey "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey "CompanyName" "${APP_PUBLISHER}"
-VIAddVersionKey "LegalCopyright" "Copyright © 2026 LAN Send"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 LAN Send"
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "..\LAN-Send.ico"
