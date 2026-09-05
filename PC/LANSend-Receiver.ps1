@@ -871,15 +871,30 @@ $window.FindName('SendPhoneMessageButton').add_Click({
 })
 $window.FindName('SendClipboardButton').add_Click({
     try {
-        if (-not [System.Windows.Clipboard]::ContainsText()) {
-            $window.FindName('StatusText').Text = 'Clipboard does not contain text or a link'
+        if ([System.Windows.Clipboard]::ContainsImage()) {
+            $image = [System.Windows.Clipboard]::GetImage()
+            $encoder = New-Object Windows.Media.Imaging.PngBitmapEncoder
+            $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($image))
+            $memory = New-Object IO.MemoryStream
+            try {
+                $encoder.Save($memory)
+                $bytes = $memory.ToArray()
+            } finally { $memory.Dispose() }
+            $name = 'Clipboard-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.png'
+            Send-ToPhone '/api/file' $bytes 'image/png' $name
+            Add-History "Sent clipboard image: $name"
+            $window.FindName('StatusText').Text = 'Clipboard image delivered to phone'
             return
         }
-        $text = [System.Windows.Clipboard]::GetText()
-        if ([string]::IsNullOrWhiteSpace($text)) { return }
-        Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
-        Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))"
-        $window.FindName('StatusText').Text = 'Clipboard delivered to phone'
+        if ([System.Windows.Clipboard]::ContainsText()) {
+            $text = [System.Windows.Clipboard]::GetText()
+            if ([string]::IsNullOrWhiteSpace($text)) { return }
+            Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
+            Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))"
+            $window.FindName('StatusText').Text = 'Clipboard delivered to phone'
+            return
+        }
+        $window.FindName('StatusText').Text = 'Clipboard does not contain text, a link, or an image'
     } catch { Show-FriendlySendError $_ }
 })
 $window.FindName('SendPhoneFileButton').add_Click({
