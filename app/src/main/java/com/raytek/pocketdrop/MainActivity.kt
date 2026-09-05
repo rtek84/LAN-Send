@@ -171,9 +171,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.scanQr).setOnClickListener {
             qrScanner.launch(ScanOptions().apply {
                 setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("Point at the QR code on your PC")
+                setPrompt("Place the PC QR code inside the box")
                 setBeepEnabled(false)
-                setOrientationLocked(false)
+                setOrientationLocked(true)
             })
         }
 
