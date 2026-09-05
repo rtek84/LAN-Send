@@ -1,4 +1,7 @@
-param([switch]$Startup)
+param(
+    [switch]$Startup,
+    [string]$SendFile
+)
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms, System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -899,4 +902,15 @@ $window.add_Closing({ param($sender, $e)
 })
 $window.add_Closed({ $heartbeatTimer.Stop(); $pollTimer.Stop(); $listener.Stop(); $listener.Close(); $notify.Visible = $false; $notify.Dispose() })
 if ($Startup) { $window.add_ContentRendered({ $window.Hide() }) }
+elseif ($SendFile) {
+    $window.add_ContentRendered({
+        if (-not (Test-Path -LiteralPath $SendFile -PathType Leaf)) {
+            $message = "The selected file could not be found:`n$SendFile"
+            $window.FindName('StatusText').Text = 'File not found'
+            [System.Windows.MessageBox]::Show($message, 'LAN Send', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning) | Out-Null
+            return
+        }
+        Send-FilesToPhone ([string[]]@($SendFile))
+    })
+}
 [void]$window.ShowDialog()
