@@ -749,6 +749,7 @@ class MainActivity : AppCompatActivity() {
         val name = displayName(uri)
         val mime = contentResolver.getType(uri) ?: "application/octet-stream"
         val size = contentLength(uri)
+        ensurePcAcceptsFile(name)
         val connection = openConnection("/api/file")
         connection.requestMethod = "POST"
         connection.doOutput = true
@@ -779,6 +780,13 @@ class MainActivity : AppCompatActivity() {
                 onProgress(sent)
             }
         }
+        verifyResponse(connection)
+    }
+
+    private fun ensurePcAcceptsFile(name: String) {
+        val connection = openConnection("/api/can-receive-file")
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("X-File-Name", URLEncoder.encode(name, "UTF-8"))
         verifyResponse(connection)
     }
 
@@ -863,7 +871,7 @@ class MainActivity : AppCompatActivity() {
     private fun friendlyError(e: Exception): String {
         return when {
             e.message?.contains("401") == true || e.message?.contains("private key", true) == true -> "Private key rejected"
-            e.message?.contains("Automatic file receiving is disabled", true) == true -> "File not received: automatic receiving is disabled on the PC"
+            e.message?.contains("Automatic file receiving is disabled", true) == true -> "File not sent: automatic receiving is disabled on the PC"
             else -> "Could not reach PC: ${e.message ?: "unknown error"}"
         }
     }
