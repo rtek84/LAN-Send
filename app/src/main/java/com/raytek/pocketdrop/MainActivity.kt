@@ -671,8 +671,10 @@ class MainActivity : AppCompatActivity() {
                 lastReconnectAttempt = System.currentTimeMillis()
                 try {
                     runOnUiThread {
-                        connectionStatus.text = "● Looking for paired PC…"
-                        connectionStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+                        if (!isFinishing && !isDestroyed) {
+                            connectionStatus.text = "● Looking for paired PC…"
+                            connectionStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+                        }
                     }
                     findPairedPc()?.let { found ->
                         activeAddress = found
@@ -680,6 +682,9 @@ class MainActivity : AppCompatActivity() {
                         getSharedPreferences("pocketdrop", MODE_PRIVATE).edit().putString("server", found).apply()
                         runOnUiThread { if (!isFinishing) serverAddress.setText(found) }
                     }
+                } catch (_: Exception) {
+                    // Discovery is only a convenience fallback. A network or
+                    // device-specific failure must never close the app.
                 } finally {
                     reconnectInProgress = false
                 }
@@ -733,7 +738,8 @@ class MainActivity : AppCompatActivity() {
         // address, but must scan the QR once before secure auto-discovery.
         if (expectedId.isBlank()) return null
         val manager = getSystemService(ConnectivityManager::class.java)
-        val localIp = manager.getLinkProperties(manager.activeNetwork)?.linkAddresses
+        val activeNetwork = manager.activeNetwork ?: return null
+        val localIp = manager.getLinkProperties(activeNetwork)?.linkAddresses
             ?.map { it.address }
             ?.filterIsInstance<Inet4Address>()
             ?.firstOrNull { !it.isLoopbackAddress && it.isSiteLocalAddress }
