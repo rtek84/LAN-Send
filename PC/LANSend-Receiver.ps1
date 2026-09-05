@@ -606,6 +606,20 @@ function Send-Response($context, [int]$code, [string]$text) {
     $context.Response.Close()
 }
 
+function Offer-EnableAutoReceive([string]$FileName) {
+    $answer = [System.Windows.MessageBox]::Show(
+        "Your paired phone tried to send '$FileName', but automatic receiving is turned off.`n`nTurn it on now? The phone will need to send the file again.",
+        'Enable automatic receiving?',
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Question
+    )
+    if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+        $Config.AutoReceiveFiles = $true
+        $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+        $window.FindName('StatusText').Text = 'Automatic receiving enabled - send the file again'
+    }
+}
+
 function Receive-Request($context) {
     try {
         if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/ping') {
@@ -617,6 +631,18 @@ function Receive-Request($context) {
         $requestDeviceId = [string]$context.Request.Headers['X-PocketDrop-Device']
         if ($Config.PairedPhoneId -and $requestDeviceId -ne [string]$Config.PairedPhoneId) {
             Send-Response $context 403 'Paired device required'; return
+        }
+        if ($context.Request.HttpMethod -eq 'GET' -and $context.Request.Url.AbsolutePath -eq '/api/can-receive-file') {
+            $encodedName = $context.Request.Headers['X-File-Name']
+            $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'this file' }
+            $name = [IO.Path]::GetFileName($name)
+            if (-not [bool]$Config.AutoReceiveFiles) {
+                Send-Response $context 403 'Automatic file receiving is disabled on the PC.'
+                Offer-EnableAutoReceive $name
+            } else {
+                Send-Response $context 200 'Ready'
+            }
+            return
         }
         if ($context.Request.HttpMethod -ne 'POST') { Send-Response $context 405 'POST required'; return }
 
@@ -648,12 +674,14 @@ function Receive-Request($context) {
                 Send-Response $context 200 'OK'
             }
             '/api/file' {
-                if (-not [bool]$Config.AutoReceiveFiles) {
-                    Send-Response $context 403 'Automatic file receiving is disabled on the PC.'; return
-                }
                 $encodedName = $context.Request.Headers['X-File-Name']
                 $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'LANSend_file' }
                 $name = [IO.Path]::GetFileName($name)
+                if (-not [bool]$Config.AutoReceiveFiles) {
+                    Send-Response $context 403 'Automatic file receiving is disabled on the PC.'
+                    Offer-EnableAutoReceive $name
+                    return
+                }
                 foreach ($char in [IO.Path]::GetInvalidFileNameChars()) { $name = $name.Replace([string]$char, '_') }
                 $target = Join-Path $Inbox $name
                 $base = [IO.Path]::GetFileNameWithoutExtension($name); $ext = [IO.Path]::GetExtension($name)
