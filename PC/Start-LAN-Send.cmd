@@ -1,2 +1,2 @@
 @echo off
-start "LAN Send" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0LANSend-Receiver.ps1"
+start "" wscript.exe "%~dp0LANSend-Launcher.vbs"
