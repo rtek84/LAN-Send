@@ -364,7 +364,7 @@ $xaml = @"
     </Border>
 
     <Border Grid.Row="4" Style="{StaticResource Card}" Padding="18,15,18,12">
-      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <TextBlock Text="Transfer activity" FontSize="18" FontWeight="SemiBold" Foreground="#182033" VerticalAlignment="Center"/>
           <Button Name="ClearHistoryButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Clear" Width="68" Height="32" Padding="10,5"/>
@@ -373,6 +373,8 @@ $xaml = @"
           <ListBox Name="HistoryList" BorderThickness="0" Background="Transparent" Foreground="#364158"
                    FontSize="13" Padding="4" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
         </Border>
+        <TextBlock Grid.Row="2" Margin="5,7,0,0" Foreground="#8792A8" FontSize="11"
+                   Text="Double-click for quick action  •  Right-click for more"/>
       </Grid>
     </Border>
 
@@ -462,6 +464,16 @@ $historyCopy = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Copy 
 $historyRemove = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Remove from history' }
 @($historyOpen,$historyShowFolder,$historySendAgain,$historyCopy,$historyRemove) | ForEach-Object { [void]$historyMenu.Items.Add($_) }
 $historyList.ContextMenu = $historyMenu
+$historyList.add_MouseDoubleClick({
+    $data = if ($historyList.SelectedItem) { $historyList.SelectedItem.Tag } else { $null }
+    if (-not $data) { return }
+    if ($data.Kind -in @('received_file','sent_file') -and (Test-Path -LiteralPath $data.Value -PathType Leaf)) {
+        Start-Process -FilePath $data.Value
+    } elseif ($data.Kind -in @('received_message','sent_message') -and $data.Value) {
+        [System.Windows.Clipboard]::SetText([string]$data.Value)
+        $window.FindName('StatusText').Text = 'Message copied'
+    }
+})
 $historyList.add_PreviewMouseRightButtonDown({ param($sender, $e)
     $node = $e.OriginalSource
     while ($node -and $node -isnot [Windows.Controls.ListBoxItem]) {
