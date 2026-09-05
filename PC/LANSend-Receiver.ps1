@@ -796,6 +796,7 @@ function Receive-Request($context) {
 
 function Send-ToPhone([string]$Path, [byte[]]$Bytes, [string]$ContentType, [string]$FileName = '') {
     if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) { throw 'Connect the phone by scanning the PC QR code first.' }
+    if ($Path -eq '/api/file') { Confirm-PhoneFileReceiving }
     $request = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)$Path")
     $request.Method = 'POST'; $request.ContentType = $ContentType; $request.ContentLength = $Bytes.Length
     $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
@@ -804,6 +805,21 @@ function Send-ToPhone([string]$Path, [byte[]]$Bytes, [string]$ContentType, [stri
     if ($FileName) { $request.Headers.Add('X-File-Name', [Uri]::EscapeDataString($FileName)) }
     $stream = $request.GetRequestStream(); $stream.Write($Bytes, 0, $Bytes.Length); $stream.Dispose()
     $response = $request.GetResponse(); $response.Dispose()
+}
+
+function Confirm-PhoneFileReceiving {
+    try {
+        $check = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)/api/can-receive-file")
+        $check.Method = 'GET'; $check.Timeout = 5000; $check.ReadWriteTimeout = 5000
+        $check.Headers.Add('X-PocketDrop-Token', [string]$Config.PhoneToken)
+        $check.Headers.Add('X-PocketDrop-Device', [string]$Config.PcDeviceId)
+        $reply = $check.GetResponse(); $reply.Dispose()
+    } catch [Net.WebException] {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 403) {
+            throw 'PHONE_FILE_RECEIVING_DISABLED'
+        }
+        throw
+    }
 }
 
 function Test-PhoneConnection {
@@ -836,6 +852,8 @@ function Show-FriendlySendError($ErrorRecord) {
               $ErrorRecord.Exception.Response -and
               [int]$ErrorRecord.Exception.Response.StatusCode -eq 401) {
         'The phone rejected this connection. Open LAN Send on your phone and scan the QR code again.'
+    } elseif ([string]$ErrorRecord.Exception.Message -like '*PHONE_FILE_RECEIVING_DISABLED*') {
+        'File not sent: receiving is disabled on the phone.'
     } else {
         'Your phone appears to be offline. Open LAN Send on your phone and try again.'
     }
@@ -860,6 +878,7 @@ function Send-FileToPhone([string]$FilePath, [long]$CompletedBefore = 0, [long]$
         $progressBar.Value = if ($BatchTotal -gt 0) { ($CompletedBefore * 100.0 / $BatchTotal) } else { 0 }
         $window.FindName('StatusText').Text = "Sending $($file.Name)..."
         if (-not $Config.PhoneAddress -or -not $Config.PhoneToken) { throw 'Connect the phone by scanning the PC QR code first.' }
+        Confirm-PhoneFileReceiving
         $request = [Net.HttpWebRequest]::Create("$($Config.PhoneAddress)/api/file")
         $request.Method = 'POST'
         $request.ContentType = 'application/octet-stream'
