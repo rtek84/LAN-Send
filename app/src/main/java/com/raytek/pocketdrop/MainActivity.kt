@@ -193,6 +193,7 @@ class MainActivity : AppCompatActivity() {
             showStatus("PC connection saved")
         }
         findViewById<Button>(R.id.sendMessage).setOnClickListener { sendMessage() }
+        findViewById<Button>(R.id.sendClipboard).setOnClickListener { sendClipboardText() }
         findViewById<Button>(R.id.chooseFiles).setOnClickListener {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 type = "*/*"
@@ -786,6 +787,28 @@ class MainActivity : AppCompatActivity() {
                     refreshTransferActivity()
                     messageText.text.clear()
                     setBusy(false, "Message delivered ✓")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { setBusy(false, friendlyError(e), true) }
+            }
+        }
+    }
+
+    private fun sendClipboardText() {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        val clip = clipboard.primaryClip
+        val text = clip?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
+        if (text.isBlank()) return showStatus("Clipboard does not contain text or a link", true)
+        if (!connectionIsReady()) return
+        setBusy(true, "Sending clipboard…")
+        executor.execute {
+            try {
+                postBytes("/api/text", "text/plain; charset=utf-8", text.toByteArray(StandardCharsets.UTF_8))
+                runOnUiThread {
+                    TransferHistory.add(this, "Sent clipboard: ${text.replace("\n", " ").take(45)}")
+                    refreshTransferActivity()
+                    setBusy(false, "Clipboard delivered ✓")
                 }
             } catch (e: Exception) {
                 runOnUiThread { setBusy(false, friendlyError(e), true) }
