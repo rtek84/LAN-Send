@@ -5,7 +5,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.ContentValues
 import android.os.IBinder
+import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import java.io.File
@@ -90,6 +94,12 @@ class PocketDropReceiverService : Service() {
                 val length = headers["content-length"]?.toLongOrNull() ?: 0L
                 when (request[1]) {
                     "/ping" -> respond(client, 200, "LAN Send phone is ready")
+                    "/api/can-receive-file" -> {
+                        val mode = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+                            .getString("phone_receive_mode", "ask") ?: "ask"
+                        if (mode == "blocked") respond(client, 403, "File receiving is disabled on the phone")
+                        else respond(client, 200, mode)
+                    }
                     "/api/text" -> {
                         if (length > 1024L * 1024L) return respond(client, 413, "Message is too large")
                         val text = readBody(input, length).toString(StandardCharsets.UTF_8)
@@ -102,10 +112,20 @@ class PocketDropReceiverService : Service() {
                         respond(client, 200, "OK")
                     }
                     "/api/file" -> {
+                        val receiveMode = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+                            .getString("phone_receive_mode", "ask") ?: "ask"
+                        if (receiveMode == "blocked") return respond(client, 403, "File receiving is disabled on the phone")
                         val encoded = headers["x-file-name"] ?: "LANSend_file"
                         val name = URLDecoder.decode(encoded, "UTF-8").substringAfterLast('/').substringAfterLast('\\')
                         val mime = headers["content-type"] ?: "application/octet-stream"
                         val file = saveIncomingFile(name, input, length)
+                        if (receiveMode == "auto") {
+                            val saved = saveToDefaultFolder(file, name, mime)
+                            file.delete()
+                            TransferHistory.add(this, "Received file: ${saved.first}", "received_file", saved.second.toString())
+                            notifyArrival("File saved from PC", saved.first)
+                            return respond(client, 200, "OK")
+                        }
                         getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
                             .putString("latest_file", name)
                             .putString("latest_file_path", file.absolutePath)
@@ -147,6 +167,69 @@ class PocketDropReceiverService : Service() {
             }
         }
         return file
+    }
+
+    private fun saveToDefaultFolder(file: File, name: String, mime: String): Pair<String, Uri> {
+        val treeValue = getSharedPreferences("pocketdrop", MODE_PRIVATE).getString("receive_folder_uri", null)
+        if (!treeValue.isNullOrBlank()) {
+            val tree = Uri.parse(treeValue)
+            val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            val savedName = uniqueTreeName(parent, name)
+            val destination = DocumentsContract.createDocument(contentResolver, parent, mime, savedName)
+                ?: error("Cannot create file in selected folder")
+            file.inputStream().use { input ->
+                contentResolver.openOutputStream(destination, "w").use { output ->
+                    requireNotNull(output); input.copyTo(output)
+                }
+            }
+            return savedName to destination
+        }
+        val savedName = uniqueDownloadName(name)
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, savedName)
+            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/LAN Send")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val destination = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Cannot create download")
+        file.inputStream().use { input ->
+            contentResolver.openOutputStream(destination).use { output -> requireNotNull(output); input.copyTo(output) }
+        }
+        values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
+        contentResolver.update(destination, values, null, null)
+        return savedName to destination
+    }
+
+    private fun numberedName(name: String, number: Int): String {
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        val extension = if (dot > 0) name.substring(dot) else ""
+        return "$base ($number)$extension"
+    }
+
+    private fun uniqueDownloadName(name: String): String {
+        val relative = Environment.DIRECTORY_DOWNLOADS + "/LAN Send/"
+        var candidate = name; var number = 1
+        while (contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID),
+                "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?",
+                arrayOf(candidate, relative), null)?.use { it.moveToFirst() } == true) {
+            candidate = numberedName(name, number++)
+        }
+        return candidate
+    }
+
+    private fun uniqueTreeName(parent: Uri, name: String): String {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, DocumentsContract.getDocumentId(parent))
+        val names = mutableSetOf<String>()
+        contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+            val column = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (column >= 0 && cursor.moveToNext()) names.add(cursor.getString(column))
+        }
+        var candidate = name; var number = 1
+        while (names.contains(candidate)) candidate = numberedName(name, number++)
+        return candidate
     }
 
     private fun readBody(input: BufferedInputStream, length: Long): ByteArray {
