@@ -12,4 +12,10 @@
     <color name="pocket_success_border">#C9EBD7</color>
     <color name="pocket_success">#16834B</color>
     <color name="pocket_success_text">#25613F</color>
+
+    <!-- QR scanner: keep the framing area clear and gently dim everything outside it. -->
+    <color name="zxing_viewfinder_mask">#99000000</color>
+    <color name="zxing_result_view">#B3000000</color>
+    <color name="zxing_viewfinder_laser">#4664F5</color>
+    <color name="zxing_possible_result_points">#80FFFFFF</color>
 </resources>
