@@ -6,12 +6,16 @@ Send screenshots, pictures, files, messages and links in both directions
 between Android and a Windows PC over the same Wi-Fi network.
 
 WINDOWS SETUP
-1. Open the PC folder.
-2. Double-click Start-LAN-Send.cmd.
-3. Windows will ask for administrator permission on the first run only. This
-   creates LAN Send's local network permission.
-4. If Windows asks about network access, allow Private networks.
-5. Keep the receiver running. Closing its window sends it to the system tray.
+1. Run LAN-Send-Setup-3.0.0.exe and follow the installer.
+2. The installer creates the Start Menu entry, configures Windows Firewall,
+   and can create Desktop and Start-with-Windows shortcuts.
+3. LAN Send runs without a PowerShell console window. Closing the main window
+   sends it to the notification area; use its tray menu to exit fully.
+
+BUILD THE WINDOWS INSTALLER
+1. Install NSIS from https://nsis.sourceforge.io/Download.
+2. Open the PC folder and double-click Build-Installer.cmd.
+3. The finished installer is written to PC\Installer\Output.
 
 ANDROID SETUP
 1. Open this LAN Send folder in Android Studio.
