@@ -622,11 +622,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettings() {
+        val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 12, 48, 8)
             addView(TextView(this@MainActivity).apply {
-                text = "Files received from your PC will be saved here when you choose Save:\n\n${defaultFolderLabel()}"
+                text = "Receiving preference"
+                textSize = 16f
+                setTextColor(getColor(R.color.pocket_text))
+            })
+            addView(android.widget.RadioGroup(this@MainActivity).apply {
+                val current = prefs.getString("phone_receive_mode", "ask") ?: "ask"
+                listOf(
+                    "ask" to "Ask what to do after receiving",
+                    "auto" to "Automatically save",
+                    "blocked" to "Do not receive files"
+                ).forEach { (value, label) ->
+                    addView(android.widget.RadioButton(this@MainActivity).apply {
+                        text = label
+                        tag = value
+                        isChecked = value == current
+                    })
+                }
+                setOnCheckedChangeListener { group, checkedId ->
+                    val mode = group.findViewById<android.widget.RadioButton>(checkedId)?.tag as? String
+                    if (mode != null) prefs.edit().putString("phone_receive_mode", mode).apply()
+                }
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "\nDefault save folder\n${defaultFolderLabel()}"
                 textSize = 15f
                 setTextColor(getColor(R.color.pocket_text_soft))
             })
@@ -643,8 +667,7 @@ class MainActivity : AppCompatActivity() {
             .setView(body)
             .setPositiveButton("Choose folder") { _, _ -> folderPicker.launch(null) }
             .setNeutralButton("Restore default") { _, _ ->
-                getSharedPreferences("pocketdrop", MODE_PRIVATE).edit()
-                    .remove("receive_folder_uri").apply()
+                prefs.edit().remove("receive_folder_uri").apply()
                 showStatus("Default restored: Downloads/LAN Send")
             }
             .setNegativeButton("Close", null)
