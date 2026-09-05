@@ -91,6 +91,33 @@
                     android:layout_height="wrap_content" android:layout_marginTop="7dp"
                     android:text="Phone receiver active\nWaiting for something from your PC"
                     android:textColor="@color/pocket_success_text" android:textSize="15sp" android:lineSpacingExtra="3dp" />
+                <LinearLayout android:id="@+id/latestMessagePanel" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                    android:background="@color/pocket_card" android:orientation="vertical" android:padding="14dp"
+                    android:visibility="gone">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="MESSAGE FROM PC" android:textColor="@color/pocket_success"
+                        android:textSize="11sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/latestMessageText" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="7dp"
+                        android:autoLink="web" android:linksClickable="true" android:textColor="@color/pocket_text_soft"
+                        android:textIsSelectable="true" android:textSize="15sp" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:gravity="end" android:orientation="horizontal">
+                        <Button android:id="@+id/copyReceivedMessage"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:minWidth="0dp" android:text="Copy" android:textAllCaps="false" />
+                        <Button android:id="@+id/openReceivedLink"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:minWidth="0dp" android:text="Open link" android:textAllCaps="false" />
+                        <Button android:id="@+id/dismissReceivedMessage"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:minWidth="0dp" android:text="Dismiss" android:textAllCaps="false" />
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
