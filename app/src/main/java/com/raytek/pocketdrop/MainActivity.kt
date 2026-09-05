@@ -10,6 +10,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.database.Cursor
 import android.net.Uri
+import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.Build
 import android.os.Environment
@@ -39,15 +40,20 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.io.BufferedInputStream
 import java.net.HttpURLConnection
+import java.net.Inet4Address
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
+    @Volatile private var reconnectInProgress = false
+    @Volatile private var lastReconnectAttempt = 0L
     private val selectedUris = mutableListOf<Uri>()
     private lateinit var serverAddress: EditText
     private lateinit var privateKey: EditText
@@ -658,22 +664,98 @@ class MainActivity : AppCompatActivity() {
             return
         }
         executor.execute {
-            val online = try {
-                val connection = URL("$address/ping").openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 2_000
-                connection.readTimeout = 2_000
-                val result = connection.responseCode in 200..299
-                connection.disconnect()
-                result
-            } catch (_: Exception) { false }
+            var activeAddress = address
+            var online = pcIdentityMatches(address)
+            if (!online && !reconnectInProgress && System.currentTimeMillis() - lastReconnectAttempt >= 20_000L) {
+                reconnectInProgress = true
+                lastReconnectAttempt = System.currentTimeMillis()
+                try {
+                    runOnUiThread {
+                        connectionStatus.text = "● Looking for paired PC…"
+                        connectionStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+                    }
+                    findPairedPc()?.let { found ->
+                        activeAddress = found
+                        online = true
+                        getSharedPreferences("pocketdrop", MODE_PRIVATE).edit().putString("server", found).apply()
+                        runOnUiThread { if (!isFinishing) serverAddress.setText(found) }
+                    }
+                } finally {
+                    reconnectInProgress = false
+                }
+            }
             runOnUiThread {
                 if (!isFinishing) {
                     connectionStatus.text = if (online) "● PC online" else "● PC offline — open LAN Send on your PC"
                     connectionStatus.setTextColor(getColor(if (online) R.color.pocket_success else android.R.color.holo_orange_dark))
+                    if (online && activeAddress != address) {
+                        showStatus("PC found at its new address ✓")
+                        startPhoneReceiverAndRegister()
+                    }
                 }
             }
         }
+    }
+
+    private fun pcIdentityMatches(address: String): Boolean {
+        val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+        val expectedId = prefs.getString("paired_pc_id", "").orEmpty()
+        val token = prefs.getString("token", "").orEmpty()
+        if (token.isBlank()) return false
+        if (expectedId.isBlank()) {
+            return try {
+                val connection = URL("${address.trimEnd('/')}/ping").openConnection() as HttpURLConnection
+                connection.connectTimeout = 450
+                connection.readTimeout = 450
+                val online = connection.responseCode in 200..299
+                connection.disconnect()
+                online
+            } catch (_: Exception) { false }
+        }
+        return try {
+            val connection = URL("${address.trimEnd('/')}/api/identity").openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 450
+            connection.readTimeout = 450
+            connection.setRequestProperty("X-PocketDrop-Token", token)
+            connection.setRequestProperty("X-PocketDrop-Device", phoneDeviceId())
+            val matches = connection.responseCode in 200..299 &&
+                connection.inputStream.bufferedReader().use { it.readText().trim() } == expectedId
+            connection.disconnect()
+            matches
+        } catch (_: Exception) { false }
+    }
+
+    private fun findPairedPc(): String? {
+        val expectedId = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+            .getString("paired_pc_id", "").orEmpty()
+        // Older pairings without a PC identity remain usable at their saved
+        // address, but must scan the QR once before secure auto-discovery.
+        if (expectedId.isBlank()) return null
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val localIp = manager.getLinkProperties(manager.activeNetwork)?.linkAddresses
+            ?.map { it.address }
+            ?.filterIsInstance<Inet4Address>()
+            ?.firstOrNull { !it.isLoopbackAddress && it.isSiteLocalAddress }
+            ?.hostAddress ?: return null
+        val prefix = localIp.substringBeforeLast('.', "")
+        if (prefix.isBlank()) return null
+
+        val pool = Executors.newFixedThreadPool(24)
+        val results = ExecutorCompletionService<String?>(pool)
+        try {
+            for (host in 1..254) {
+                val candidate = "http://$prefix.$host:8734"
+                results.submit { if (pcIdentityMatches(candidate)) candidate else null }
+            }
+            repeat(254) {
+                val found = results.poll(550, TimeUnit.MILLISECONDS)?.get()
+                if (found != null) return found
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        return null
     }
 
     private fun connectionIsReady(): Boolean {
