@@ -444,12 +444,53 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menu.Items.Add('Exit', $null, { $script:AllowClose = $true; $window.Close() })
 $notify.ContextMenuStrip = $menu
 
-function Add-History([string]$text) {
+function Add-History([string]$text, [string]$Kind = '', [string]$Value = '') {
     $window.Dispatcher.Invoke([action]{
-        $historyList.Items.Insert(0, "$(Get-Date -Format 'HH:mm')  $text")
+        $item = New-Object Windows.Controls.ListBoxItem
+        $item.Content = "$(Get-Date -Format 'HH:mm')  $text"
+        $item.Tag = [pscustomobject]@{ Kind = $Kind; Value = $Value }
+        $historyList.Items.Insert(0, $item)
         while ($historyList.Items.Count -gt 30) { $historyList.Items.RemoveAt(30) }
     })
 }
+
+$historyMenu = New-Object Windows.Controls.ContextMenu
+$historyOpen = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Open' }
+$historyShowFolder = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Show in folder' }
+$historySendAgain = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Send again' }
+$historyCopy = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Copy message' }
+$historyRemove = New-Object Windows.Controls.MenuItem -Property @{ Header = 'Remove from history' }
+@($historyOpen,$historyShowFolder,$historySendAgain,$historyCopy,$historyRemove) | ForEach-Object { [void]$historyMenu.Items.Add($_) }
+$historyList.ContextMenu = $historyMenu
+$historyList.add_PreviewMouseRightButtonDown({ param($sender, $e)
+    $node = $e.OriginalSource
+    while ($node -and $node -isnot [Windows.Controls.ListBoxItem]) {
+        try { $node = [Windows.Media.VisualTreeHelper]::GetParent($node) } catch { $node = $null }
+    }
+    if ($node -is [Windows.Controls.ListBoxItem]) { $node.IsSelected = $true }
+})
+$historyMenu.add_Opened({
+    $data = if ($historyList.SelectedItem) { $historyList.SelectedItem.Tag } else { $null }
+    $isFile = $data -and $data.Kind -in @('received_file','sent_file') -and (Test-Path -LiteralPath $data.Value -PathType Leaf)
+    $historyOpen.Visibility = if ($isFile) { 'Visible' } else { 'Collapsed' }
+    $historyShowFolder.Visibility = if ($isFile) { 'Visible' } else { 'Collapsed' }
+    $historySendAgain.Visibility = if ($data -and $data.Kind -eq 'sent_file' -and $isFile) { 'Visible' } else { 'Collapsed' }
+    $historyCopy.Visibility = if ($data -and $data.Kind -in @('received_message','sent_message') -and $data.Value) { 'Visible' } else { 'Collapsed' }
+})
+$historyOpen.add_Click({ $data = $historyList.SelectedItem.Tag; if (Test-Path -LiteralPath $data.Value) { Start-Process -FilePath $data.Value } })
+$historyShowFolder.add_Click({
+    $data = $historyList.SelectedItem.Tag
+    if (Test-Path -LiteralPath $data.Value) { Start-Process explorer.exe -ArgumentList "/select,`"$($data.Value)`"" }
+})
+$historySendAgain.add_Click({
+    $data = $historyList.SelectedItem.Tag
+    if (Test-Path -LiteralPath $data.Value -PathType Leaf) { Send-FilesToPhone ([string[]]@($data.Value)) }
+})
+$historyCopy.add_Click({
+    $data = $historyList.SelectedItem.Tag
+    if ($data.Value) { [System.Windows.Clipboard]::SetText([string]$data.Value); $window.FindName('StatusText').Text = 'Message copied' }
+})
+$historyRemove.add_Click({ if ($historyList.SelectedItem) { $historyList.Items.Remove($historyList.SelectedItem) } })
 
 function Show-Arrival([string]$title, [string]$body, [string]$OpenPath = '') {
     $script:ArrivalOpenPath = $OpenPath
@@ -676,7 +717,7 @@ function Receive-Request($context) {
                 $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                 Add-Content -Path (Join-Path $Inbox 'Messages.txt') -Value "[$stamp] $text`r`n" -Encoding UTF8
                 $window.Dispatcher.Invoke([action]{ [System.Windows.Clipboard]::SetText($text) })
-                Add-History "Message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
+                Add-History "Message: $($text.Substring(0, [Math]::Min(55, $text.Length)))" 'received_message' $text
                 Show-Arrival 'LAN Send message' 'Copied to clipboard'
                 Send-Response $context 200 'OK'
             }
@@ -700,7 +741,7 @@ function Receive-Request($context) {
                 $output = [IO.File]::Create($target)
                 $context.Request.InputStream.CopyTo($output)
                 $output.Dispose()
-                Add-History "File: $([IO.Path]::GetFileName($target))"
+                Add-History "File: $([IO.Path]::GetFileName($target))" 'received_file' $target
                 Show-Arrival 'LAN Send received - click to open' ([IO.Path]::GetFileName($target)) $target
                 Send-Response $context 200 'OK'
             }
@@ -808,7 +849,7 @@ function Send-FileToPhone([string]$FilePath, [long]$CompletedBefore = 0, [long]$
             } finally { $stream.Dispose() }
         } finally { $input.Dispose() }
         $response = $request.GetResponse(); $response.Dispose()
-        Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))"
+        Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))" 'sent_file' $file.FullName
         return $true
     } catch { Show-FriendlySendError $_; return $false }
 }
@@ -864,7 +905,7 @@ $window.FindName('SendPhoneMessageButton').add_Click({
     if ([string]::IsNullOrWhiteSpace($text)) { return }
     try {
         Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
-        Add-History "Sent message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
+        Add-History "Sent message: $($text.Substring(0, [Math]::Min(55, $text.Length)))" 'sent_message' $text
         $window.FindName('PhoneMessageBox').Clear()
         $window.FindName('StatusText').Text = 'Message delivered to phone'
     } catch { Show-FriendlySendError $_ }
@@ -890,7 +931,7 @@ $window.FindName('SendClipboardButton').add_Click({
             $text = [System.Windows.Clipboard]::GetText()
             if ([string]::IsNullOrWhiteSpace($text)) { return }
             Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
-            Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))"
+            Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))" 'sent_message' $text
             $window.FindName('StatusText').Text = 'Clipboard delivered to phone'
             return
         }
