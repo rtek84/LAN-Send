@@ -68,13 +68,14 @@ Initialize-NetworkAccess
 if (Test-Path $ConfigPath) {
     $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 } else {
-    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = ''; PcDeviceId = ([guid]::NewGuid().ToString('N')); PairedPhoneId = '' }
+    $Config = [pscustomobject]@{ Token = ([guid]::NewGuid().ToString('N')); Inbox = $Inbox; PhoneAddress = ''; PhoneToken = ''; PcDeviceId = ([guid]::NewGuid().ToString('N')); PairedPhoneId = ''; AutoReceiveFiles = $true }
     $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 }
 if (-not $Config.PSObject.Properties['PhoneAddress']) { $Config | Add-Member NoteProperty PhoneAddress '' }
 if (-not $Config.PSObject.Properties['PhoneToken']) { $Config | Add-Member NoteProperty PhoneToken '' }
 if (-not $Config.PSObject.Properties['PcDeviceId']) { $Config | Add-Member NoteProperty PcDeviceId ([guid]::NewGuid().ToString('N')) }
 if (-not $Config.PSObject.Properties['PairedPhoneId']) { $Config | Add-Member NoteProperty PairedPhoneId '' }
+if (-not $Config.PSObject.Properties['AutoReceiveFiles']) { $Config | Add-Member NoteProperty AutoReceiveFiles $true }
 $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 $script:Token = [string]$Config.Token
 $Inbox = [string]$Config.Inbox
@@ -426,6 +427,12 @@ $notify.Icon = if (Test-Path $IconPath) { New-Object System.Drawing.Icon($IconPa
 $notify.Text = 'LAN Send Receiver'
 $notify.Visible = $true
 $notify.add_DoubleClick({ $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
+$script:ArrivalOpenPath = ''
+$notify.add_BalloonTipClicked({
+    if ($script:ArrivalOpenPath -and (Test-Path -LiteralPath $script:ArrivalOpenPath -PathType Leaf)) {
+        Start-Process -FilePath $script:ArrivalOpenPath
+    }
+})
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menu.Items.Add('Open LAN Send', $null, { $window.Show(); $window.WindowState = 'Normal'; $window.Activate() })
@@ -440,7 +447,8 @@ function Add-History([string]$text) {
     })
 }
 
-function Show-Arrival([string]$title, [string]$body) {
+function Show-Arrival([string]$title, [string]$body, [string]$OpenPath = '') {
+    $script:ArrivalOpenPath = $OpenPath
     $notify.BalloonTipTitle = $title
     $notify.BalloonTipText = $body
     $notify.ShowBalloonTip(3500)
@@ -473,7 +481,7 @@ function Show-SettingsWindow {
     $settingsXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LAN Send settings" Width="570" Height="450" ResizeMode="NoResize"
+        Title="LAN Send settings" Width="570" Height="555" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Background="#F5F7FC" FontFamily="Segoe UI" ShowInTaskbar="False">
   <Window.Resources>
     <Style TargetType="Button">
@@ -495,7 +503,7 @@ function Show-SettingsWindow {
     </Style>
   </Window.Resources>
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <TextBlock Text="PC inbox folder" FontSize="21" FontWeight="SemiBold" Foreground="#182033"/>
     <TextBlock Grid.Row="1" Margin="0,7,0,14" Text="Files received from your phone are saved here." Foreground="#758096" FontSize="13"/>
     <TextBox Name="InboxPathBox" Grid.Row="2" Height="42" IsReadOnly="True" VerticalContentAlignment="Center"
@@ -507,10 +515,16 @@ function Show-SettingsWindow {
       <Button Name="ChooseButton" Content="Change folder" Width="115" Height="38" Background="#4664F5" Foreground="White"/>
     </StackPanel>
     <Border Grid.Row="5" Height="1" Background="#DCE2EE" Margin="0,20,0,16"/>
-    <TextBlock Grid.Row="6" Text="Security" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
-    <TextBlock Grid.Row="7" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
+    <TextBlock Grid.Row="6" Text="Receiving" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+    <TextBlock Grid.Row="7" Margin="0,5,0,0" Text="Choose whether your paired phone may send files directly to this inbox."
                TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
-    <StackPanel Grid.Row="8" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+    <CheckBox Name="AutoReceiveBox" Grid.Row="8" Margin="0,12,0,0" Content="Automatically receive files from paired phone"
+              Foreground="#364158" FontSize="13"/>
+    <Border Grid.Row="9" Height="1" Background="#DCE2EE" Margin="0,18,0,16"/>
+    <TextBlock Grid.Row="10" Text="Security" FontSize="18" FontWeight="SemiBold" Foreground="#182033"/>
+    <TextBlock Grid.Row="11" Margin="0,5,0,0" Text="Manage the phone paired with this PC. Security changes require scanning the QR code again."
+               TextWrapping="Wrap" Foreground="#758096" FontSize="13"/>
+    <StackPanel Grid.Row="12" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
       <Button Name="ForgetPhoneButton" Content="Forget paired phone" Width="165" Height="38" Margin="0,0,8,0" Foreground="#B42318" Background="#FFF0EE"/>
       <Button Name="RegenerateKeyButton" Content="Regenerate private key" Width="165" Height="38" Foreground="White" Background="#4664F5"/>
     </StackPanel>
@@ -523,6 +537,13 @@ function Show-SettingsWindow {
     $pathBox = $settingsWindow.FindName('InboxPathBox')
     $savedText = $settingsWindow.FindName('SavedText')
     $pathBox.Text = $script:Inbox
+    $autoReceiveBox = $settingsWindow.FindName('AutoReceiveBox')
+    $autoReceiveBox.IsChecked = [bool]$Config.AutoReceiveFiles
+    $autoReceiveBox.add_Click({
+        $Config.AutoReceiveFiles = [bool]$autoReceiveBox.IsChecked
+        $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+        $savedText.Text = if ($Config.AutoReceiveFiles) { 'Automatic file receiving enabled' } else { 'Automatic file receiving disabled' }
+    })
 
     $settingsWindow.FindName('ChooseButton').add_Click({
         # OpenFileDialog uses the modern Explorer picker. With validation disabled,
@@ -627,6 +648,9 @@ function Receive-Request($context) {
                 Send-Response $context 200 'OK'
             }
             '/api/file' {
+                if (-not [bool]$Config.AutoReceiveFiles) {
+                    Send-Response $context 403 'Automatic file receiving is disabled on the PC.'; return
+                }
                 $encodedName = $context.Request.Headers['X-File-Name']
                 $name = if ($encodedName) { [Uri]::UnescapeDataString($encodedName.Replace('+',' ')) } else { 'LANSend_file' }
                 $name = [IO.Path]::GetFileName($name)
@@ -642,7 +666,7 @@ function Receive-Request($context) {
                 $context.Request.InputStream.CopyTo($output)
                 $output.Dispose()
                 Add-History "File: $([IO.Path]::GetFileName($target))"
-                Show-Arrival 'LAN Send received' ([IO.Path]::GetFileName($target))
+                Show-Arrival 'LAN Send received - click to open' ([IO.Path]::GetFileName($target)) $target
                 Send-Response $context 200 'OK'
             }
             default { Send-Response $context 404 'Unknown LAN Send endpoint' }
