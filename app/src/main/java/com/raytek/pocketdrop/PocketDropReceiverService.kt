@@ -150,9 +150,11 @@ class PocketDropReceiverService : Service() {
         val directory = File(getExternalFilesDir(null) ?: filesDir, "incoming").apply { mkdirs() }
         val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "LANSend_file" }
         var file = File(directory, safeName)
-        val base = safeName.substringBeforeLast('.', safeName)
+        val originalBase = safeName.substringBeforeLast('.', safeName)
+        val base = originalBase.replace(Regex(" \\(\\d+\\)$"), "")
         val extension = safeName.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
-        var copyNumber = 1
+        var copyNumber = Regex(" \\((\\d+)\\)$").find(originalBase)
+            ?.groupValues?.get(1)?.toIntOrNull()?.plus(1) ?: 1
         while (file.exists()) {
             file = File(directory, "$base ($copyNumber)$extension")
             copyNumber++
@@ -203,14 +205,21 @@ class PocketDropReceiverService : Service() {
 
     private fun numberedName(name: String, number: Int): String {
         val dot = name.lastIndexOf('.')
-        val base = if (dot > 0) name.substring(0, dot) else name
+        val originalBase = if (dot > 0) name.substring(0, dot) else name
+        val base = originalBase.replace(Regex(" \\(\\d+\\)$"), "")
         val extension = if (dot > 0) name.substring(dot) else ""
         return "$base ($number)$extension"
     }
 
+    private fun nextCopyNumber(name: String): Int {
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        return Regex(" \\((\\d+)\\)$").find(base)?.groupValues?.get(1)?.toIntOrNull()?.plus(1) ?: 1
+    }
+
     private fun uniqueDownloadName(name: String): String {
         val relative = Environment.DIRECTORY_DOWNLOADS + "/LAN Send/"
-        var candidate = name; var number = 1
+        var candidate = name; var number = nextCopyNumber(name)
         while (contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                 arrayOf(MediaStore.Downloads._ID),
                 "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?",
@@ -227,7 +236,7 @@ class PocketDropReceiverService : Service() {
             val column = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             while (column >= 0 && cursor.moveToNext()) names.add(cursor.getString(column))
         }
-        var candidate = name; var number = 1
+        var candidate = name; var number = nextCopyNumber(name)
         while (names.contains(candidate)) candidate = numberedName(name, number++)
         return candidate
     }
