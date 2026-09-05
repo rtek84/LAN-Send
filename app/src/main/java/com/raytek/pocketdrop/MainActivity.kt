@@ -1027,6 +1027,7 @@ class MainActivity : AppCompatActivity() {
     private fun ensurePcAcceptsFile(name: String) {
         val connection = openConnection("/api/can-receive-file")
         connection.requestMethod = "GET"
+        connection.readTimeout = 300_000
         connection.setRequestProperty("X-File-Name", URLEncoder.encode(name, "UTF-8"))
         verifyResponse(connection)
     }
@@ -1113,6 +1114,8 @@ class MainActivity : AppCompatActivity() {
         return when {
             e.message?.contains("401") == true || e.message?.contains("private key", true) == true -> "Private key rejected"
             e.message?.contains("Automatic file receiving is disabled", true) == true -> "File not sent: automatic receiving is disabled on the PC"
+            e.message?.contains("File receiving is disabled", true) == true -> "File not sent: receiving is disabled on the PC"
+            e.message?.contains("declined on the PC", true) == true -> "File not sent: declined on the PC"
             else -> "Could not reach PC: ${e.message ?: "unknown error"}"
         }
     }
