@@ -138,6 +138,11 @@
                 </com.google.android.material.textfield.TextInputLayout>
                 <Button android:id="@+id/sendMessage" android:layout_width="match_parent" android:layout_height="50dp"
                     android:layout_marginTop="10dp" android:text="Send message" />
+                <Button android:id="@+id/sendClipboard"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent" android:layout_height="50dp"
+                    android:layout_marginTop="8dp" android:text="Send clipboard"
+                    android:textAllCaps="false" />
                 <View android:layout_width="match_parent" android:layout_height="1dp"
                     android:layout_marginTop="18dp" android:layout_marginBottom="16dp" android:background="@color/pocket_border" />
                 <Button android:id="@+id/chooseFiles" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
