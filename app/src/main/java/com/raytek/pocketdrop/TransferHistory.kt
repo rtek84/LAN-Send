@@ -49,6 +49,20 @@ object TransferHistory {
         save(context, updated)
     }
 
+    @Synchronized
+    fun replaceValue(context: Context, oldValue: String, newValue: String) {
+        val existing = raw(context)
+        var changed = false
+        for (index in 0 until existing.length()) {
+            val item = existing.optJSONObject(index) ?: continue
+            if (item.optString("value") == oldValue) {
+                item.put("value", newValue)
+                changed = true
+            }
+        }
+        if (changed) save(context, existing)
+    }
+
     fun displayText(context: Context, limit: Int = MAX_ENTRIES): String {
         val entries = entries(context)
         if (entries.isEmpty()) return "No transfers yet"
