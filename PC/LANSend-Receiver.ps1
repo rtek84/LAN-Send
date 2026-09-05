@@ -3,6 +3,10 @@ param(
     [string]$SendFile
 )
 
+# Keep this Windows PowerShell 5.1 source file ASCII-only. PowerShell 5.1 may
+# decode UTF-8 files without a BOM as ANSI, turning decorative symbols into
+# unreadable characters on some PCs.
+
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms, System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -374,7 +378,7 @@ $xaml = @"
                    FontSize="13" Padding="4" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
         </Border>
         <TextBlock Grid.Row="2" Margin="5,7,0,0" Foreground="#8792A8" FontSize="11"
-                   Text="Double-click for quick action  •  Right-click for more"/>
+                   Text="Double-click for quick action  |  Right-click for more"/>
       </Grid>
     </Border>
 
