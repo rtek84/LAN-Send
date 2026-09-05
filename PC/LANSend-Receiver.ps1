@@ -351,10 +351,11 @@ $xaml = @"
         </Grid>
         <TextBox Name="PhoneMessageBox" Grid.Row="1" Height="66" Margin="0,13,0,10" AcceptsReturn="True"
                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="Type a message or link"/>
-        <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <Button Name="SendPhoneMessageButton" Content="Send message" Width="126" Height="38"/>
           <Button Name="SendPhoneFileButton" Grid.Column="1" Style="{StaticResource SoftButton}" Content="Choose file" Width="112" Height="38" Margin="8,0,0,0"/>
-          <TextBlock Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8792A8"
+          <Button Name="SendClipboardButton" Grid.Column="2" Style="{StaticResource SoftButton}" Content="Send clipboard" Width="126" Height="38" Margin="8,0,0,0"/>
+          <TextBlock Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8792A8"
                      FontSize="12" Text="You can also drop files anywhere here"/>
         </Grid>
         <ProgressBar Name="PhoneSendProgress" Grid.Row="3" Height="7" Margin="0,12,0,0"
@@ -866,6 +867,19 @@ $window.FindName('SendPhoneMessageButton').add_Click({
         Add-History "Sent message: $($text.Substring(0, [Math]::Min(55, $text.Length)))"
         $window.FindName('PhoneMessageBox').Clear()
         $window.FindName('StatusText').Text = 'Message delivered to phone'
+    } catch { Show-FriendlySendError $_ }
+})
+$window.FindName('SendClipboardButton').add_Click({
+    try {
+        if (-not [System.Windows.Clipboard]::ContainsText()) {
+            $window.FindName('StatusText').Text = 'Clipboard does not contain text or a link'
+            return
+        }
+        $text = [System.Windows.Clipboard]::GetText()
+        if ([string]::IsNullOrWhiteSpace($text)) { return }
+        Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
+        Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))"
+        $window.FindName('StatusText').Text = 'Clipboard delivered to phone'
     } catch { Show-FriendlySendError $_ }
 })
 $window.FindName('SendPhoneFileButton').add_Click({
