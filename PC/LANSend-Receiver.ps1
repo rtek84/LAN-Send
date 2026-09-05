@@ -11,6 +11,7 @@ $ConfigPath = Join-Path $AppFolder 'config.json'
 $Inbox = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LAN Send Inbox'
 $StartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\LAN Send Receiver.lnk'
 $LegacyStartupShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\PocketDrop Receiver.lnk'
+$LauncherPath = Join-Path $PSScriptRoot 'LANSend-Launcher.vbs'
 
 New-Item -ItemType Directory -Path $AppFolder,$Inbox -Force | Out-Null
 
@@ -29,8 +30,25 @@ function Initialize-NetworkAccess {
         }
         $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
         netsh http add urlacl "url=http://+:$Port/" "user=$user" | Out-Null
-        netsh advfirewall firewall add rule name="PocketDrop Receiver" dir=in action=allow protocol=TCP localport=$Port profile=private | Out-Null
+        netsh advfirewall firewall add rule name="LAN Send Receiver" dir=in action=allow protocol=TCP localport=$Port profile=private | Out-Null
     }
+}
+
+function Set-StartupShortcut {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($StartupShortcut)
+    if (Test-Path $LauncherPath) {
+        $shortcut.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
+        $shortcut.Arguments = "`"$LauncherPath`" Startup"
+        $shortcut.IconLocation = "$IconPath,0"
+    } else {
+        # Portable fallback for copies that do not include the launcher yet.
+        $shortcut.TargetPath = 'powershell.exe'
+        $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Startup"
+    }
+    $shortcut.WorkingDirectory = $PSScriptRoot
+    $shortcut.Description = 'Start LAN Send in the notification area'
+    $shortcut.Save()
 }
 
 Initialize-NetworkAccess
@@ -382,22 +400,12 @@ $phoneStatus = $window.FindName('PhoneStatus')
 if ($Config.PhoneAddress) { $phoneStatus.Text = "Connected: $($Config.PhoneAddress)"; $phoneStatus.Foreground = '#2E7D32' }
 $legacyStartupWasEnabled = Test-Path $LegacyStartupShortcut
 if ($legacyStartupWasEnabled -and -not (Test-Path $StartupShortcut)) {
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($StartupShortcut)
-    $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Startup"
-    $shortcut.WorkingDirectory = Split-Path $PSCommandPath
-    $shortcut.Save()
+    Set-StartupShortcut
     Remove-Item $LegacyStartupShortcut -Force -ErrorAction SilentlyContinue
 }
 # Refresh an existing shortcut after script/file renames.
 if (Test-Path $StartupShortcut) {
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($StartupShortcut)
-    $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Startup"
-    $shortcut.WorkingDirectory = Split-Path $PSCommandPath
-    $shortcut.Save()
+    Set-StartupShortcut
 }
 $startupBox = $window.FindName('StartupBox'); $startupBox.IsChecked = Test-Path $StartupShortcut
 
@@ -817,12 +825,7 @@ $window.add_PreviewDrop({ param($sender, $e)
 })
 $startupBox.add_Click({
     if ($startupBox.IsChecked) {
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($StartupShortcut)
-        $shortcut.TargetPath = 'powershell.exe'
-        $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Startup"
-        $shortcut.WorkingDirectory = Split-Path $PSCommandPath
-        $shortcut.Save()
+        Set-StartupShortcut
     } else { Remove-Item $StartupShortcut -Force -ErrorAction SilentlyContinue }
 })
 
