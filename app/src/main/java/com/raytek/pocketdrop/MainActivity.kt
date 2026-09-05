@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
 import android.content.ContentValues
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -18,6 +20,7 @@ import android.content.pm.PackageManager
 import android.provider.MediaStore
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.Patterns
 import android.view.View
 import android.view.Gravity
 import android.view.ViewGroup
@@ -109,12 +112,13 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.getStringExtra(PocketDropReceiverService.EXTRA_TYPE)) {
                 "message" -> {
-                    messageText.setText(intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty())
+                    showLatestMessage(intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty())
                     receivedFromPc.text = "Latest arrival: message from PC"
                     refreshTransferActivity()
                     showStatus("Message received from PC")
                 }
                 "file" -> {
+                    findViewById<View>(R.id.latestMessagePanel).visibility = View.GONE
                     val name = intent.getStringExtra(PocketDropReceiverService.EXTRA_VALUE).orEmpty()
                     receivedFromPc.text = "Latest file: $name\nReady to open or save"
                     refreshTransferActivity()
@@ -274,11 +278,46 @@ class MainActivity : AppCompatActivity() {
         val fileTime = arrivals.getLong("latest_file_time", 0L)
         if (messageTime >= fileTime && messageTime > 0L) {
             val message = arrivals.getString("latest", "").orEmpty()
-            if (messageText.text.isNullOrBlank()) messageText.setText(message)
+            showLatestMessage(message)
             receivedFromPc.text = "Latest arrival: message from PC"
         } else if (fileTime > 0L) {
+            findViewById<View>(R.id.latestMessagePanel).visibility = View.GONE
             val name = arrivals.getString("latest_file", "").orEmpty()
             receivedFromPc.text = "Latest file: $name\nReady to open or save"
+        } else {
+            findViewById<View>(R.id.latestMessagePanel).visibility = View.GONE
+        }
+    }
+
+    private fun showLatestMessage(message: String) {
+        val panel = findViewById<View>(R.id.latestMessagePanel)
+        val messageView = findViewById<TextView>(R.id.latestMessageText)
+        val openLink = findViewById<Button>(R.id.openReceivedLink)
+        messageView.text = message
+        panel.visibility = View.VISIBLE
+
+        findViewById<Button>(R.id.copyReceivedMessage).setOnClickListener {
+            getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("LAN Send message", message))
+            showStatus("Message copied ✓")
+        }
+
+        val matcher = Patterns.WEB_URL.matcher(message)
+        val foundUrl = if (matcher.find()) matcher.group() else null
+        openLink.visibility = if (foundUrl == null) View.GONE else View.VISIBLE
+        openLink.setOnClickListener {
+            foundUrl?.let { value ->
+                val url = if (value.startsWith("http://", true) || value.startsWith("https://", true)) value else "https://$value"
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                catch (_: Exception) { showStatus("Could not open this link", true) }
+            }
+        }
+
+        findViewById<Button>(R.id.dismissReceivedMessage).setOnClickListener {
+            getSharedPreferences("pocketdrop_messages", MODE_PRIVATE).edit()
+                .remove("latest").remove("latest_time").apply()
+            panel.visibility = View.GONE
+            receivedFromPc.text = "Phone receiver active\nWaiting for something from your PC"
         }
     }
 
@@ -824,6 +863,7 @@ class MainActivity : AppCompatActivity() {
     private fun friendlyError(e: Exception): String {
         return when {
             e.message?.contains("401") == true || e.message?.contains("private key", true) == true -> "Private key rejected"
+            e.message?.contains("Automatic file receiving is disabled", true) == true -> "File not received: automatic receiving is disabled on the PC"
             else -> "Could not reach PC: ${e.message ?: "unknown error"}"
         }
     }
