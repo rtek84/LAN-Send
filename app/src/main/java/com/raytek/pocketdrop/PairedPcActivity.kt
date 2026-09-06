@@ -43,6 +43,7 @@ class PairedPcActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        PhoneRegistration.registerAsync(this, resultRecord.record)
         setResult(Activity.RESULT_OK)
         refreshList()
         showMessage(if (resultRecord.added) "PC added and selected" else "PC selected")
@@ -177,7 +178,9 @@ class PairedPcActivity : AppCompatActivity() {
             .setItems(actions.toTypedArray()) { _, which ->
                 when (actions[which]) {
                     "Use this PC" -> {
-                        PairedPcStore.select(this, record.recordId)
+                        PairedPcStore.select(this, record.recordId)?.let {
+                            PhoneRegistration.registerAsync(this, it)
+                        }
                         setResult(Activity.RESULT_OK)
                         refreshList()
                     }
@@ -214,7 +217,9 @@ class PairedPcActivity : AppCompatActivity() {
             .setMessage("You can pair this PC again later by scanning its QR code. Transferred files will not be deleted.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Forget") { _, _ ->
-                PairedPcStore.forget(this, record.recordId)
+                PairedPcStore.forget(this, record.recordId)?.let {
+                    PhoneRegistration.registerAsync(this, it)
+                }
                 setResult(Activity.RESULT_OK)
                 refreshList()
             }
