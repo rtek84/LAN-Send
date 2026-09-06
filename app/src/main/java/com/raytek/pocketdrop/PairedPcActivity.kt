@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -81,7 +82,10 @@ class PairedPcActivity : AppCompatActivity() {
             setImageResource(R.drawable.ic_arrow_back)
             imageTintList = ColorStateList.valueOf(getColor(R.color.pocket_text_soft))
             contentDescription = "Back"
-            setBackgroundResource(android.R.attr.selectableItemBackgroundBorderless)
+            val selectableBackground = TypedValue()
+            if (theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, selectableBackground, true)) {
+                setBackgroundResource(selectableBackground.resourceId)
+            }
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
