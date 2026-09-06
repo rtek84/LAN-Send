@@ -59,6 +59,31 @@ object PairedPcStore {
             -1
         }
 
+        if (index >= 0 && deviceId.isNotBlank()) {
+            val active = records[index]
+            if (active.deviceId.isNotBlank() && active.deviceId != deviceId) {
+                val existingNewDevice = records.indexOfFirst { it.deviceId == deviceId }
+                if (existingNewDevice >= 0) {
+                    index = existingNewDevice
+                    activeRecordId = records[index].recordId
+                } else if (records.size < MAX_REMEMBERED_PCS) {
+                    val added = PairedPcRecord(
+                        recordId = "pc:$deviceId",
+                        deviceId = deviceId,
+                        name = nextDefaultName(records),
+                        server = server,
+                        token = token
+                    )
+                    records += added
+                    index = records.lastIndex
+                    activeRecordId = added.recordId
+                } else {
+                    writeRecordsAndActive(prefs, records, active)
+                    return
+                }
+            }
+        }
+
         if (index < 0 && deviceId.isNotBlank()) {
             index = records.indexOfFirst { it.deviceId == deviceId }
         }
