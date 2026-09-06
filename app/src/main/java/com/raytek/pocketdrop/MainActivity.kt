@@ -21,6 +21,12 @@ import android.content.pm.PackageManager
 import android.provider.MediaStore
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
 import android.util.Patterns
 import android.view.View
 import android.view.Gravity
@@ -46,6 +52,9 @@ import java.net.URLConnection
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorCompletionService
@@ -272,9 +281,22 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, padding, 0, padding)
             })
         }
+        val dateFormat = SimpleDateFormat("d MMM yyyy", Locale.ENGLISH)
+        var previousDate = ""
         entries.forEachIndexed { index, entry ->
+            val date = dateFormat.format(Date(entry.timestamp))
+            if (date != previousDate) {
+                list.addView(TextView(this).apply {
+                    text = date
+                    setTextColor(getColor(R.color.pocket_text))
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, padding, 0, padding / 4)
+                })
+                previousDate = date
+            }
             list.addView(TextView(this).apply {
-                text = entry.display
+                text = styledHistoryEntry(entry)
                 setTextColor(getColor(R.color.pocket_text_soft))
                 textSize = 13f
                 setPadding(0, padding, 0, padding)
@@ -314,17 +336,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showHistoryActions(entry: TransferHistoryEntry, index: Int, onHistoryChanged: () -> Unit) {
+        if (entry.kind.endsWith("_message") && entry.value.isNotBlank()) {
+            showHistoryMessage(entry, index, onHistoryChanged)
+            return
+        }
         val actions = mutableListOf<Pair<String, () -> Unit>>()
         if (entry.kind.endsWith("_file") && entry.value.isNotBlank()) {
             actions += "Open" to { openHistoryFile(entry.value) }
             actions += "Send again" to { sendHistoryFile(entry.value) }
-        }
-        if (entry.kind.endsWith("_message") && entry.value.isNotBlank()) {
-            actions += "Copy message" to {
-                getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText("LAN Send message", entry.value))
-                showStatus("Message copied ✓")
-            }
         }
         actions += "Remove from history" to {
             TransferHistory.removeAt(this, index)
@@ -337,6 +356,68 @@ class MainActivity : AppCompatActivity() {
             .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun showHistoryMessage(entry: TransferHistoryEntry, index: Int, onHistoryChanged: () -> Unit) {
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val message = TextView(this).apply {
+            text = entry.value
+            textSize = 16f
+            setTextColor(getColor(R.color.pocket_text_soft))
+            setTextIsSelectable(true)
+            setPadding(padding, padding / 2, padding, padding)
+        }
+        val scroll = ScrollView(this).apply { addView(message) }
+        val title = if (entry.kind == "sent_message") "Sent message" else "Received message"
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(scroll)
+            .setPositiveButton("Copy") { _, _ ->
+                getSystemService(ClipboardManager::class.java)
+                    .setPrimaryClip(ClipData.newPlainText("LAN Send message", entry.value))
+                showStatus("Message copied ✓")
+            }
+            .setNeutralButton("Remove") { _, _ ->
+                TransferHistory.removeAt(this, index)
+                refreshTransferActivity()
+                showStatus("History entry removed")
+                onHistoryChanged()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun styledHistoryEntry(entry: TransferHistoryEntry): CharSequence {
+        val result = SpannableStringBuilder(entry.display)
+        if (entry.kind.endsWith("_file") && entry.value.isNotBlank()) {
+            val separator = entry.display.indexOf(": ", startIndex = 5)
+            if (separator >= 0 && separator + 2 < result.length) {
+                val start = separator + 2
+                result.setSpan(ForegroundColorSpan(getColor(R.color.pocket_blue)), start, result.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                result.setSpan(UnderlineSpan(), start, result.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return result
+    }
+
+    private fun styledHistoryText(limit: Int): CharSequence {
+        val entries = TransferHistory.entries(this).take(limit)
+        if (entries.isEmpty()) return "No transfers yet"
+        val result = SpannableStringBuilder()
+        val dateFormat = SimpleDateFormat("d MMM yyyy", Locale.ENGLISH)
+        var previousDate = ""
+        entries.forEach { entry ->
+            val date = dateFormat.format(Date(entry.timestamp))
+            if (result.isNotEmpty()) result.append('\n')
+            if (date != previousDate) {
+                val start = result.length
+                result.append(date).append('\n')
+                result.setSpan(StyleSpan(Typeface.BOLD), start, start + date.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                previousDate = date
+            }
+            result.append(styledHistoryEntry(entry))
+        }
+        return result
     }
 
     private fun historyUri(value: String): Uri {
@@ -364,7 +445,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 sendUri(uri)
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent again: ${displayName(uri)}", "sent_file", uri.toString())
+                    TransferHistory.add(this, "Sent file: ${displayName(uri)}", "sent_file", uri.toString())
                     refreshTransferActivity()
                     setBusy(false, "File delivered again ✓")
                 }
@@ -433,7 +514,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshTransferActivity() {
-        transferActivity.text = TransferHistory.displayText(this, 30)
+        transferActivity.text = styledHistoryText(30)
         showAllHistory.visibility = if (TransferHistory.count(this) > 30) View.VISIBLE else View.GONE
     }
 
@@ -955,7 +1036,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 postBytes("/api/text", "text/plain; charset=utf-8", text.toByteArray(StandardCharsets.UTF_8))
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent clipboard: ${text.replace("\n", " ").take(45)}", "sent_message", text)
+                    TransferHistory.add(this, "Sent message: ${text.replace("\n", " ").take(45)}", "sent_message", text)
                     refreshTransferActivity()
                     setBusy(false, "Clipboard delivered ✓")
                 }
@@ -977,7 +1058,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 runOnUiThread {
-                    TransferHistory.add(this, "Sent clipboard image: $originalName", "sent_file", uri.toString())
+                    TransferHistory.add(this, "Sent file: $originalName", "sent_file", uri.toString())
                     refreshTransferActivity()
                     progress.progress = 100
                     setBusy(false, "Clipboard image delivered ✓")
