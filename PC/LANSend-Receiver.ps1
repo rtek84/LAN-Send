@@ -454,10 +454,57 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menu.Items.Add('Exit', $null, { $script:AllowClose = $true; $window.Close() })
 $notify.ContextMenuStrip = $menu
 
+function Show-HistoryMessageDialog($Data) {
+    if (-not $Data -or -not $Data.Value) { return }
+    $dialog = New-Object Windows.Window
+    $dialog.Title = if ($Data.Kind -eq 'sent_message') { 'Sent message' } else { 'Received message' }
+    $dialog.Width = 540; $dialog.Height = 360; $dialog.MinWidth = 420; $dialog.MinHeight = 260
+    $dialog.WindowStartupLocation = 'CenterOwner'; $dialog.Owner = $window
+    $dialog.Background = '#F5F7FC'; $dialog.FontFamily = 'Segoe UI'; $dialog.ShowInTaskbar = $false
+
+    $grid = New-Object Windows.Controls.Grid
+    $grid.Margin = '20'
+    [void]$grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = '*' }))
+    [void]$grid.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = 'Auto' }))
+    $messageBox = New-Object Windows.Controls.TextBox
+    $messageBox.Text = [string]$Data.Value; $messageBox.IsReadOnly = $true
+    $messageBox.AcceptsReturn = $true; $messageBox.TextWrapping = 'Wrap'
+    $messageBox.VerticalScrollBarVisibility = 'Auto'; $messageBox.Padding = '12'
+    $messageBox.FontSize = 14; $messageBox.Background = 'White'; $messageBox.BorderBrush = '#DCE2EE'
+    [Windows.Controls.Grid]::SetRow($messageBox, 0); [void]$grid.Children.Add($messageBox)
+
+    $buttons = New-Object Windows.Controls.StackPanel
+    $buttons.Orientation = 'Horizontal'; $buttons.HorizontalAlignment = 'Right'; $buttons.Margin = '0,14,0,0'
+    $copyButton = New-Object Windows.Controls.Button
+    $copyButton.Content = 'Copy'; $copyButton.Width = 92; $copyButton.Height = 36; $copyButton.Margin = '0,0,8,0'
+    $closeButton = New-Object Windows.Controls.Button
+    $closeButton.Content = 'Close'; $closeButton.Width = 92; $closeButton.Height = 36
+    $copyButton.add_Click({ [System.Windows.Clipboard]::SetText([string]$Data.Value); $dialog.Close() })
+    $closeButton.add_Click({ $dialog.Close() })
+    [void]$buttons.Children.Add($copyButton); [void]$buttons.Children.Add($closeButton)
+    [Windows.Controls.Grid]::SetRow($buttons, 1); [void]$grid.Children.Add($buttons)
+    $dialog.Content = $grid
+    [void]$dialog.ShowDialog()
+}
+
 function Add-History([string]$text, [string]$Kind = '', [string]$Value = '') {
     $window.Dispatcher.Invoke([action]{
         $item = New-Object Windows.Controls.ListBoxItem
-        $item.Content = "$(Get-Date -Format 'HH:mm')  $text"
+        $line = New-Object Windows.Controls.TextBlock
+        $line.TextWrapping = 'Wrap'
+        $dateText = [DateTime]::Now.ToString('d MMM yyyy', [Globalization.CultureInfo]::InvariantCulture)
+        $prefix = "$dateText  $(Get-Date -Format 'HH:mm')  "
+        $separator = $text.IndexOf(': ')
+        $hasFileAction = $Kind -in @('received_file','sent_file') -and $Value -and (Test-Path -LiteralPath $Value -PathType Leaf)
+        if ($hasFileAction -and $separator -ge 0) {
+            [void]$line.Inlines.Add((New-Object Windows.Documents.Run -ArgumentList ($prefix + $text.Substring(0, $separator + 2))))
+            $fileRun = New-Object Windows.Documents.Run -ArgumentList ($text.Substring($separator + 2))
+            $fileRun.Foreground = '#3048C9'; $fileRun.TextDecorations = 'Underline'; $fileRun.Cursor = 'Hand'
+            [void]$line.Inlines.Add($fileRun)
+        } else {
+            $line.Text = $prefix + $text
+        }
+        $item.Content = $line
         $item.Tag = [pscustomobject]@{ Kind = $Kind; Value = $Value }
         $historyList.Items.Insert(0, $item)
         while ($historyList.Items.Count -gt 30) { $historyList.Items.RemoveAt(30) }
@@ -478,8 +525,7 @@ $historyList.add_MouseDoubleClick({
     if ($data.Kind -in @('received_file','sent_file') -and (Test-Path -LiteralPath $data.Value -PathType Leaf)) {
         Start-Process -FilePath $data.Value
     } elseif ($data.Kind -in @('received_message','sent_message') -and $data.Value) {
-        [System.Windows.Clipboard]::SetText([string]$data.Value)
-        $window.FindName('StatusText').Text = 'Message copied'
+        Show-HistoryMessageDialog $data
     }
 })
 $historyList.add_PreviewMouseRightButtonDown({ param($sender, $e)
@@ -753,7 +799,7 @@ function Receive-Request($context) {
                 $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                 Add-Content -Path (Join-Path $Inbox 'Messages.txt') -Value "[$stamp] $text`r`n" -Encoding UTF8
                 $window.Dispatcher.Invoke([action]{ [System.Windows.Clipboard]::SetText($text) })
-                Add-History "Message: $($text.Substring(0, [Math]::Min(55, $text.Length)))" 'received_message' $text
+                Add-History "Received message: $($text.Substring(0, [Math]::Min(55, $text.Length)))" 'received_message' $text
                 Show-Arrival 'LAN Send message' 'Copied to clipboard'
                 Send-Response $context 200 'OK'
             }
@@ -786,7 +832,7 @@ function Receive-Request($context) {
                 $output = [IO.File]::Create($target)
                 $context.Request.InputStream.CopyTo($output)
                 $output.Dispose()
-                Add-History "File: $([IO.Path]::GetFileName($target))" 'received_file' $target
+                Add-History "Received file: $([IO.Path]::GetFileName($target))" 'received_file' $target
                 Show-Arrival 'LAN Send received - click to open' ([IO.Path]::GetFileName($target)) $target
                 Send-Response $context 200 'OK'
                 if ([bool]$Config.AutoOpenInbox) { Start-Process explorer.exe $Inbox }
@@ -914,7 +960,7 @@ function Send-FileToPhone([string]$FilePath, [long]$CompletedBefore = 0, [long]$
             } finally { $stream.Dispose() }
         } finally { $input.Dispose() }
         $response = $request.GetResponse(); $response.Dispose()
-        Add-History "Sent to phone: $([IO.Path]::GetFileName($FilePath))" 'sent_file' $file.FullName
+        Add-History "Sent file: $([IO.Path]::GetFileName($FilePath))" 'sent_file' $file.FullName
         return $true
     } catch { Show-FriendlySendError $_; return $false }
 }
@@ -988,7 +1034,7 @@ $window.FindName('SendClipboardButton').add_Click({
             } finally { $memory.Dispose() }
             $name = 'Clipboard-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.png'
             Send-ToPhone '/api/file' $bytes 'image/png' $name
-            Add-History "Sent clipboard image: $name"
+            Add-History "Sent file: $name"
             $window.FindName('StatusText').Text = 'Clipboard image delivered to phone'
             return
         }
@@ -996,7 +1042,7 @@ $window.FindName('SendClipboardButton').add_Click({
             $text = [System.Windows.Clipboard]::GetText()
             if ([string]::IsNullOrWhiteSpace($text)) { return }
             Send-ToPhone '/api/text' ([Text.Encoding]::UTF8.GetBytes($text)) 'text/plain; charset=utf-8'
-            Add-History "Sent clipboard: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))" 'sent_message' $text
+            Add-History "Sent message: $($text.Replace("`r", ' ').Replace("`n", ' ').Substring(0, [Math]::Min(55, $text.Length)))" 'sent_message' $text
             $window.FindName('StatusText').Text = 'Clipboard delivered to phone'
             return
         }
