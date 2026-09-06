@@ -14,6 +14,11 @@ data class PairedPcRecord(
     val token: String
 )
 
+data class PairedPcUpsertResult(
+    val record: PairedPcRecord,
+    val added: Boolean
+)
+
 object PairedPcStore {
     const val MAX_REMEMBERED_PCS = 3
 
@@ -58,9 +63,6 @@ object PairedPcStore {
             index = records.indexOfFirst { it.deviceId == deviceId }
         }
 
-        // First upgrade from the legacy single-PC format: if exactly one
-        // remembered record exists, keep updating that record rather than
-        // creating a duplicate while the app still uses the legacy UI.
         if (index < 0 && activeRecordId.isBlank() && records.size == 1) {
             index = 0
         }
@@ -84,7 +86,7 @@ object PairedPcStore {
             records += PairedPcRecord(
                 recordId = recordId,
                 deviceId = deviceId,
-                name = "PC",
+                name = nextDefaultName(records),
                 server = server,
                 token = token
             )
@@ -97,6 +99,92 @@ object PairedPcStore {
             .apply()
     }
 
+    @Synchronized
+    fun addOrActivate(
+        context: Context,
+        server: String,
+        token: String,
+        deviceId: String
+    ): PairedPcUpsertResult? {
+        val cleanServer = server.trim().trimEnd('/')
+        val cleanToken = token.trim()
+        val cleanDeviceId = deviceId.trim()
+        if (cleanServer.isBlank() || cleanToken.isBlank() || cleanDeviceId.isBlank()) return null
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val records = readRecords(prefs).toMutableList()
+        val index = records.indexOfFirst { it.deviceId == cleanDeviceId }
+        val added = index < 0
+
+        val record = if (index >= 0) {
+            records[index].copy(server = cleanServer, token = cleanToken, deviceId = cleanDeviceId).also {
+                records[index] = it
+            }
+        } else {
+            if (records.size >= MAX_REMEMBERED_PCS) return null
+            PairedPcRecord(
+                recordId = "pc:$cleanDeviceId",
+                deviceId = cleanDeviceId,
+                name = nextDefaultName(records),
+                server = cleanServer,
+                token = cleanToken
+            ).also { records += it }
+        }
+
+        writeRecordsAndActive(prefs, records, record)
+        return PairedPcUpsertResult(record, added)
+    }
+
+    @Synchronized
+    fun select(context: Context, recordId: String): PairedPcRecord? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val records = readRecords(prefs)
+        val record = records.firstOrNull { it.recordId == recordId } ?: return null
+        writeRecordsAndActive(prefs, records, record)
+        return record
+    }
+
+    @Synchronized
+    fun rename(context: Context, recordId: String, name: String): Boolean {
+        val cleanName = name.trim().take(40)
+        if (cleanName.isBlank()) return false
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val records = readRecords(prefs).toMutableList()
+        val index = records.indexOfFirst { it.recordId == recordId }
+        if (index < 0) return false
+        records[index] = records[index].copy(name = cleanName)
+        prefs.edit().putString(RECORDS_KEY, encodeRecords(records)).apply()
+        return true
+    }
+
+    @Synchronized
+    fun forget(context: Context, recordId: String): PairedPcRecord? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val records = readRecords(prefs).toMutableList()
+        val activeId = prefs.getString(ACTIVE_RECORD_KEY, "").orEmpty()
+        val removed = records.removeAll { it.recordId == recordId }
+        if (!removed) return activeRecord(context)
+
+        if (activeId == recordId) {
+            val next = records.firstOrNull()
+            if (next == null) {
+                prefs.edit()
+                    .putString(RECORDS_KEY, encodeRecords(records))
+                    .remove(ACTIVE_RECORD_KEY)
+                    .remove("server")
+                    .remove("token")
+                    .remove("paired_pc_id")
+                    .apply()
+                return null
+            }
+            writeRecordsAndActive(prefs, records, next)
+            return next
+        }
+
+        prefs.edit().putString(RECORDS_KEY, encodeRecords(records)).apply()
+        return records.firstOrNull { it.recordId == activeId }
+    }
+
     fun records(context: Context): List<PairedPcRecord> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return readRecords(prefs)
@@ -107,6 +195,40 @@ object PairedPcStore {
         val activeRecordId = prefs.getString(ACTIVE_RECORD_KEY, "").orEmpty()
         if (activeRecordId.isBlank()) return null
         return readRecords(prefs).firstOrNull { it.recordId == activeRecordId }
+    }
+
+    fun isRememberedDevice(context: Context, deviceId: String): Boolean {
+        val cleanDeviceId = deviceId.trim()
+        if (cleanDeviceId.isBlank()) return false
+        val remembered = records(context)
+        if (remembered.any { it.deviceId == cleanDeviceId }) return true
+        if (remembered.isNotEmpty()) return false
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("paired_pc_id", "").orEmpty() == cleanDeviceId
+    }
+
+    private fun writeRecordsAndActive(
+        prefs: SharedPreferences,
+        records: List<PairedPcRecord>,
+        active: PairedPcRecord
+    ) {
+        prefs.edit()
+            .putString(RECORDS_KEY, encodeRecords(records))
+            .putString(ACTIVE_RECORD_KEY, active.recordId)
+            .putString("server", active.server)
+            .putString("token", active.token)
+            .putString("paired_pc_id", active.deviceId)
+            .apply()
+    }
+
+    private fun nextDefaultName(records: List<PairedPcRecord>): String {
+        val used = records.map { it.name }.toSet()
+        if ("PC" !in used) return "PC"
+        for (number in 2..MAX_REMEMBERED_PCS) {
+            val candidate = "PC $number"
+            if (candidate !in used) return candidate
+        }
+        return "PC ${records.size + 1}"
     }
 
     private fun readRecords(prefs: SharedPreferences): List<PairedPcRecord> {
