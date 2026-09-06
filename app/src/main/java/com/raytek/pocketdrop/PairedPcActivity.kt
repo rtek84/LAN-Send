@@ -1,17 +1,23 @@
 package com.raytek.pocketdrop
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.card.MaterialCardView
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
@@ -19,6 +25,7 @@ class PairedPcActivity : AppCompatActivity() {
     private lateinit var listContainer: LinearLayout
     private lateinit var countLabel: TextView
     private lateinit var addButton: Button
+    private var baseBottomPadding = 0
 
     private val qrScanner = registerForActivityResult(ScanContract()) { result ->
         val value = result.contents ?: return@registerForActivityResult
@@ -53,63 +60,90 @@ class PairedPcActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         title = "Remembered PCs"
         setResult(Activity.RESULT_OK)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(24))
             setBackgroundColor(getColor(R.color.pocket_surface))
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            elevation = dp(3).toFloat()
+            setBackgroundColor(getColor(R.color.pocket_surface))
+            setPadding(dp(8), dp(10), dp(20), dp(12))
         }
-        header.addView(Button(this).apply {
-            text = "Back"
-            isAllCaps = false
+        header.addView(ImageButton(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            imageTintList = ColorStateList.valueOf(getColor(R.color.pocket_text_soft))
+            contentDescription = "Back"
+            setBackgroundResource(android.R.attr.selectableItemBackgroundBorderless)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
             setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(TextView(this).apply {
             text = "Remembered PCs"
-            textSize = 24f
+            textSize = 25f
             setTextColor(getColor(R.color.pocket_text))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(12), 0, 0, 0)
+            setPadding(dp(4), 0, 0, 0)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(header)
 
-        root.addView(TextView(this).apply {
-            text = "LAN Send remembers up to 3 PCs. Transfers still go to one selected PC at a time."
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(16))
+        }
+        baseBottomPadding = dp(16)
+
+        body.addView(TextView(this).apply {
+            text = "Choose the PC LAN Send should use. Up to 3 PCs can be remembered at one time."
             textSize = 13f
             setTextColor(getColor(R.color.pocket_muted))
-            setPadding(0, dp(14), 0, dp(12))
+            setPadding(0, 0, 0, dp(10))
         })
 
         countLabel = TextView(this).apply {
             textSize = 13f
             setTextColor(getColor(R.color.pocket_muted))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        root.addView(countLabel)
+        body.addView(countLabel)
 
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply {
+            clipToPadding = false
+        }
         listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(12), 0, dp(8))
         }
         scroll.addView(listContainer)
-        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        body.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         addButton = Button(this).apply {
             text = "Add PC"
             isAllCaps = false
             setOnClickListener { scanAnotherPc() }
         }
-        root.addView(addButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        body.addView(addButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply {
+            topMargin = dp(8)
+        })
 
+        root.addView(body, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            header.setPadding(dp(8), dp(10) + systemBars.top, dp(20), dp(12))
+            body.setPadding(dp(20), dp(20), dp(20), baseBottomPadding + systemBars.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
+
         refreshList()
     }
 
@@ -139,29 +173,71 @@ class PairedPcActivity : AppCompatActivity() {
                 text = "No PCs remembered yet"
                 textSize = 15f
                 setTextColor(getColor(R.color.pocket_text_soft))
-                setPadding(0, 24, 0, 24)
+                gravity = Gravity.CENTER
+                setPadding(0, 48, 0, 48)
             })
             return
         }
 
         val density = resources.displayMetrics.density
-        val gap = (10 * density).toInt()
+        fun dp(value: Int) = (value * density).toInt()
         records.forEach { record ->
-            val button = Button(this).apply {
-                text = if (record.recordId == activeId) {
-                    "${record.name}  -  Selected\n${record.server}"
-                } else {
-                    "${record.name}\n${record.server}"
-                }
-                isAllCaps = false
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setPadding(18, 12, 18, 12)
+            val selected = record.recordId == activeId
+            val card = MaterialCardView(this).apply {
+                radius = dp(16).toFloat()
+                cardElevation = 0f
+                setCardBackgroundColor(getColor(R.color.pocket_card))
+                strokeColor = getColor(if (selected) R.color.pocket_blue else R.color.pocket_border)
+                strokeWidth = dp(if (selected) 2 else 1)
+                isClickable = true
+                isFocusable = true
                 setOnClickListener { showPcActions(record) }
             }
-            listContainer.addView(button, LinearLayout.LayoutParams(
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(14), dp(12), dp(14))
+            }
+
+            val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            details.addView(TextView(this).apply {
+                text = record.name
+                textSize = 16f
+                setTextColor(getColor(R.color.pocket_text))
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            details.addView(TextView(this).apply {
+                text = record.server
+                textSize = 12f
+                setTextColor(getColor(R.color.pocket_muted))
+                setPadding(0, dp(4), 0, 0)
+            })
+            if (selected) {
+                details.addView(TextView(this).apply {
+                    text = "Selected"
+                    textSize = 12f
+                    setTextColor(getColor(R.color.pocket_blue))
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, dp(7), 0, 0)
+                })
+            }
+            row.addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            row.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                text = "Manage"
+                isAllCaps = false
+                setTextColor(getColor(R.color.pocket_blue))
+                minWidth = 0
+                setPadding(dp(10), 0, dp(10), 0)
+                setOnClickListener { showPcActions(record) }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
+
+            card.addView(row)
+            listContainer.addView(card, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = gap })
+            ).apply { bottomMargin = dp(10) })
         }
     }
 
