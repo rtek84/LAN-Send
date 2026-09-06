@@ -36,9 +36,15 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private val pairedPcLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        setResult(Activity.RESULT_OK)
+        refreshPairedPcStatus()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        setResult(Activity.RESULT_OK)
 
         folderLabel = findViewById(R.id.defaultFolderValue)
         pairedPcStatus = findViewById(R.id.pairedPcStatus)
@@ -64,8 +70,15 @@ class SettingsActivity : AppCompatActivity() {
             preferences().edit().remove("receive_folder_uri").apply()
             refreshFolderLabel()
         }
-        findViewById<Button>(R.id.forgetPc).setOnClickListener { confirmForgetPc() }
+        findViewById<Button>(R.id.managePcs).setOnClickListener {
+            pairedPcLauncher.launch(Intent(this, PairedPcActivity::class.java))
+        }
         refreshFolderLabel()
+        refreshPairedPcStatus()
+    }
+
+    override fun onResume() {
+        super.onResume()
         refreshPairedPcStatus()
     }
 
@@ -86,35 +99,12 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshPairedPcStatus() {
-        pairedPcStatus.text = if (preferences().getString("server", "").isNullOrBlank()) {
-            "No PC is currently paired"
-        } else {
-            "A PC is paired with this phone"
+        val records = PairedPcStore.records(this)
+        val active = PairedPcStore.activeRecord(this)
+        pairedPcStatus.text = when {
+            records.isEmpty() -> "No PC is currently remembered"
+            active != null -> "${records.size} of ${PairedPcStore.MAX_REMEMBERED_PCS} PCs remembered\nSelected: ${active.name}"
+            else -> "${records.size} of ${PairedPcStore.MAX_REMEMBERED_PCS} PCs remembered"
         }
-    }
-
-    private fun confirmForgetPc() {
-        if (preferences().getString("server", "").isNullOrBlank()) {
-            AlertDialog.Builder(this)
-                .setMessage("No PC is currently paired.")
-                .setPositiveButton("OK", null)
-                .show()
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Forget paired PC?")
-            .setMessage("This revokes the current connection. You will need to scan the PC QR code again. Transferred files will not be deleted.")
-            .setNegativeButton("No", null)
-            .setPositiveButton("Yes") { _, _ ->
-                preferences().edit()
-                    .remove("server")
-                    .remove("token")
-                    .remove("paired_pc_id")
-                    .apply()
-                stopService(Intent(this, PocketDropReceiverService::class.java))
-                setResult(Activity.RESULT_OK)
-                refreshPairedPcStatus()
-            }
-            .show()
     }
 }
