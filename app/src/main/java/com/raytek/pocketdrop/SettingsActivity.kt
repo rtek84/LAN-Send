@@ -70,8 +70,12 @@ class SettingsActivity : AppCompatActivity() {
             preferences().edit().remove("receive_folder_uri").apply()
             refreshFolderLabel()
         }
-        findViewById<Button>(R.id.managePcs).setOnClickListener {
-            pairedPcLauncher.launch(Intent(this, PairedPcActivity::class.java))
+        findViewById<Button>(R.id.forgetPc).apply {
+            text = "Manage PCs"
+            setTextColor(getColor(R.color.pocket_blue))
+            setOnClickListener {
+                pairedPcLauncher.launch(Intent(this@SettingsActivity, PairedPcActivity::class.java))
+            }
         }
         refreshFolderLabel()
         refreshPairedPcStatus()
