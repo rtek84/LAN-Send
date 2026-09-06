@@ -56,6 +56,17 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var reconnectInProgress = false
     @Volatile private var lastReconnectAttempt = 0L
     private val selectedUris = mutableListOf<Uri>()
+    private val settingsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val prefs = getSharedPreferences("pocketdrop", MODE_PRIVATE)
+            serverAddress.setText(prefs.getString("server", ""))
+            privateKey.setText(prefs.getString("token", ""))
+            if (serverAddress.text.isNullOrBlank()) {
+                connectionStatus.text = "● PC not configured"
+                connectionStatus.setTextColor(getColor(R.color.pocket_muted))
+            }
+        }
+    }
     private lateinit var serverAddress: EditText
     private lateinit var privateKey: EditText
     private lateinit var messageText: EditText
@@ -177,7 +188,9 @@ class MainActivity : AppCompatActivity() {
         transferActivity = findViewById(R.id.transferActivity)
         showAllHistory = findViewById(R.id.showAllHistory)
         connectionStatus = findViewById(R.id.connectionStatus)
-        findViewById<View>(R.id.settingsButton).setOnClickListener { showSettings() }
+        findViewById<View>(R.id.settingsButton).setOnClickListener {
+            settingsLauncher.launch(Intent(this, SettingsActivity::class.java))
+        }
         findViewById<View>(R.id.clearHistory).setOnClickListener { confirmClearHistory() }
         showAllHistory.setOnClickListener { showFullTransferHistory() }
         transferActivity.setOnClickListener { showFullTransferHistory() }
